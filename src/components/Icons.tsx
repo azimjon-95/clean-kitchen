@@ -246,3 +246,139 @@ export function TileMain({ size = 34 }: { size?: number }) {
     </svg>
   );
 }
+
+/* ───────── Qo'shimcha chiziqli ikonlar ───────── */
+export const IconScan = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 8.5V6a2 2 0 0 1 2-2h2.500M15.500 4H18a2 2 0 0 1 2 2v2.500M20 15.500V18a2 2 0 0 1-2 2h-2.500M8.500 20H6a2 2 0 0 1-2-2v-2.500" />
+    <rect x="8" y="9" width="8" height="6" rx="1.500" />
+  </Svg>
+);
+export const IconLayers = (p: P) => (
+  <Svg {...p}>
+    <path d="m12 3.500 8.500 4.500-8.500 4.500L3.500 8 12 3.500Z" />
+    <path d="m3.500 12.500 8.500 4.500 8.500-4.500M3.500 16.500l8.500 4.500 8.500-4.500" />
+  </Svg>
+);
+export const IconCalc = (p: P) => (
+  <Svg {...p}>
+    <rect x="5" y="3.500" width="14" height="17" rx="2.500" />
+    <path d="M8.500 7.500h7M8.800 12h.01M12 12h.01M15.200 12h.01M8.800 15.500h.01M12 15.500h.01M15.200 15.500h.01" strokeWidth={2.400} />
+  </Svg>
+);
+export const IconImport = (p: P) => (
+  <Svg {...p}>
+    <path d="M14 3.500H8a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8l-4-4.500Z" />
+    <path d="M13.500 3.500V8H18M9 12.500h6M9 16h4" />
+  </Svg>
+);
+export const IconQr = (p: P) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="6.500" height="6.500" rx="1.200" />
+    <rect x="13.500" y="4" width="6.500" height="6.500" rx="1.200" />
+    <rect x="4" y="13.500" width="6.500" height="6.500" rx="1.200" />
+    <path d="M13.500 13.500h2.500v2.500h-2.500zM18 18h2M16 20h-2.500M20 13.500v2" />
+  </Svg>
+);
+export const IconCloudDown = (p: P) => (
+  <Svg {...p}>
+    <path d="M7 18a4.500 4.500 0 0 1-.600-8.960A6 6 0 0 1 17.900 9.500 4.300 4.300 0 0 1 17.500 18" />
+    <path d="M12 11.500v7.500m0 0-2.800-2.800M12 19l2.800-2.800" />
+  </Svg>
+);
+export const IconCamera = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 8.500A1.500 1.500 0 0 1 5.500 7H8l1.200-2h5.600L16 7h2.500A1.500 1.500 0 0 1 20 8.500v9a1.500 1.500 0 0 1-1.500 1.500h-13A1.500 1.500 0 0 1 4 17.500v-9Z" />
+    <circle cx="12" cy="12.500" r="3.300" />
+  </Svg>
+);
+export const IconDownload = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 4v11m0 0-4-4m4 4 4-4M5 19.500h14" />
+  </Svg>
+);
+export const IconShare = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 15V4m0 0L8.500 7.500M12 4l3.500 3.500M6 11.500v6A1.500 1.500 0 0 0 7.500 19h9a1.500 1.500 0 0 0 1.500-1.500v-6" />
+  </Svg>
+);
+export const IconTrash = (p: P) => (
+  <Svg {...p}>
+    <path d="M5 7h14M10 7V4.500h4V7M7 7l.8 12h8.400L17 7M10.500 11v5M13.500 15.500" />
+  </Svg>
+);
+export const IconInfo = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.500" />
+    <path d="M12 11v5.500M12 7.800h.01" strokeWidth={2.400} />
+  </Svg>
+);
+export const IconWifi = (p: P) => (
+  <Svg {...p}>
+    <path d="M3 9.500a14 14 0 0 1 18 0M6 13a9.500 9.500 0 0 1 12 0M9 16.500a5 5 0 0 1 6 0M12 20h.01" />
+  </Svg>
+);
+export const IconArrowRight = (p: P) => (
+  <Svg {...p}>
+    <path d="M4.500 12h15m0 0-6-6m6 6-6 6" />
+  </Svg>
+);
+
+/* ───────── Rangli kategoriya belgilari (Все блюда / Супы / Салаты / Основные / Десерты) ───────── */
+export function TileCloche({ size = 40 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <defs><linearGradient id="cl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#F7A25C" /><stop offset="1" stopColor="#D8661F" /></linearGradient></defs>
+      <rect x="3" y="30" width="34" height="4.500" rx="2.250" fill="#C9742E" />
+      <path d="M6.500 30a13.500 13.500 0 0 1 27 0H6.500Z" fill="url(#cl)" />
+      <circle cx="20" cy="14.500" r="2.800" fill="#C9742E" />
+      <path d="M12 24.500a9 9 0 0 1 5-6.500" stroke="#fff" strokeWidth="2" strokeLinecap="round" fill="none" opacity=".55" />
+    </svg>
+  );
+}
+export function TileSoup({ size = 40 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <path d="M4 18h32c0 9-7 15-16 15S4 27 4 18Z" fill="#EF5B6B" />
+      <ellipse cx="20" cy="18" rx="16" ry="4.500" fill="#FBD48A" />
+      <circle cx="15" cy="18" r="1.800" fill="#E8453C" />
+      <circle cx="23" cy="17.500" r="1.500" fill="#6FBF5E" />
+      <circle cx="27" cy="19" r="1.300" fill="#F59E3A" />
+      <path d="M25 7c2.500 1.800-.5 3.500 1.500 6" stroke="#E8453C" strokeWidth="2" strokeLinecap="round" fill="none" />
+    </svg>
+  );
+}
+export function TileSaladBowl({ size = 40 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <path d="M4 20h32c0 8.500-6.800 14-16 14S4 28.500 4 20Z" fill="#4EA865" />
+      <path d="M7 20c0-4.500 3-8 7-8 1.500-3 5-4 8-2.500 3.500 0 6.500 3 6.500 7L7 20Z" fill="#9BD66E" />
+      <circle cx="14" cy="16" r="2.700" fill="#F6C945" />
+      <circle cx="25" cy="15" r="2.500" fill="#E8453C" />
+      <circle cx="19" cy="14" r="2.200" fill="#B6E27B" />
+    </svg>
+  );
+}
+export function TileGrill({ size = 40 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <ellipse cx="20" cy="29" rx="17" ry="6" fill="#E8D5B8" />
+      <path d="M6 24c2-8 10-11 18-9 8 2 11 7 8 11-3 3-12 4-19 2-4-1-7-2-7-4Z" fill="#E48B3D" />
+      <path d="M13 22l5 5M19 19l6 6M25 17l5 5" stroke="#9B4F17" strokeWidth="2.200" strokeLinecap="round" />
+      <circle cx="9" cy="30" r="2.300" fill="#7CC36A" />
+      <circle cx="31" cy="30.500" r="2" fill="#E8453C" />
+    </svg>
+  );
+}
+export function TileCake({ size = 40 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <path d="M5 30V19l30-6v17c0 2-2 3-4 3H9c-2 0-4-1-4-3Z" fill="#FFE3A3" />
+      <path d="M5 19l30-6v6L5 25v-6Z" fill="#E94F77" />
+      <path d="M5 26l30-6" stroke="#fff" strokeWidth="2.200" />
+      <path d="M5 19l30-6v3.500L5 22.500V19Z" fill="#fff" opacity=".85" />
+      <circle cx="20" cy="12" r="4.500" fill="#E0273F" />
+      <path d="M20 8c0-2 1.500-3 3-3.500" stroke="#3E9B52" strokeWidth="2" strokeLinecap="round" fill="none" />
+    </svg>
+  );
+}

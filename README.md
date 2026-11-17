@@ -27,32 +27,48 @@ Production build: `npm run build` → `dist/`.
 |-------|-------------------|-------|
 | Server javob berdi | Server kartalari (IndexedDB ga keshlanadi) | 🟢 «Онлайн · данные сервера» |
 | Server javob bermadi (5 s timeout / xato), kesh bor | IndexedDB keshi | 🔵 «Офлайн · локальный кэш» |
-| Server javob bermadi va kesh bo'sh, yoki server bo'sh ro'yxat qaytardi | **30 ta mock karta** | 🟠 «Демо-режим · 30 тестовых карт» |
-| `VITE_USE_MOCK=true` | 30 ta mock karta | 🟠 |
+| Server javob bermadi va kesh bo'sh, yoki server bo'sh ro'yxat qaytardi | **37 ta mock karta** | 🟠 «Демо-режим · 37 тестовых карт» |
+| `VITE_USE_MOCK=true` | 37 ta mock karta | 🟠 |
 
 Demo rejimida «Подключиться к серверу» tugmasi serverga qayta ulanishga urinadi.
 
 ## Mock data
 
-`src/data/mockRecipes.ts` — 30 ta texnologik karta, barcha 4 sex va uchastkalar bo'yicha:
+`src/data/mockRecipes.ts` — 37 ta texnologik karta, barcha 4 sex va uchastkalar bo'yicha:
 
-- **Горячий цех** (14): Соусы, Паста, Мангал, Раздача, Заготовка — болоньезе, карбонара, шашлык, плов ташкентский…
+- **Горячий цех** (19): Соусы, Паста, Мангал, Раздача, Заготовка — болоньезе, карбонара, шашлык, плов ташкентский…
 - **Суши** (6): Роллы, Сашими / Нигири, Заготовка
 - **Холодный цех** (6): Салаты, Закуски, Заготовка — цезарь, ачичук…
-- **Кондитерский** (4): Десерты, Пекарный, Заготовка — тирамису, круассан…
+- **Кондитерский** (6): Десерты, Пекарный, Заготовка — тирамису, круассан…
 
 Har bir kartada: ingredientlar (miqdor + birlik → porsiya bo'yicha masshtablash ishlaydi),
 texnologiya bosqichlari, food cost (UZS) va qidiruv uchun RU/UZ teglar.
 Format server API (`GET /api/recipes`) javobiga mos.
 
-## Dizayn va ovozli qidiruv
+## Интерфейс (iPhone / iPad)
 
-- Mobil-birinchi dizayn (Bosh sahifa · Қидирув · Сақланган · Меню), interfeys o'zbek kirillchasida.
-- Barcha ikonlar o'zimizning SVG to'plamimizda (`src/components/Icons.tsx`), tashqi kutubxonasiz.
-- Bosh sahifa yoki qidiruvdagi mikrofon bosilishi bilan **darrov eshitish sahifasi** ochiladi va tinglash boshlanadi.
-  Aniq bitta karta topilsa — karta sahifasi ochiladi; bir nechta bo'lsa — natijalar ro'yxati; topilmasa — yana urinib ko'rish.
-- Taom rasmlari: mock kartalarda real foto (`loremflickr.com`, taomga mos teglar). Foto yuklanmasa yoki offline bo'lsa,
-  taomning SVG illyustratsiyasi ko'rinadi (`src/components/RecipeImage.tsx`). Server kartalarida `imageUrl` ishlatiladi.
+Весь интерфейс на русском языке. Главная: шапка с уведомлениями, баннер-карусель, поиск (по названию и ингредиентам)
+с кнопками голосового поиска и сканера QR, категории со счётчиками, недавно открытые, быстрые действия, нижняя навигация
+(Главная · Поиск · Сохранённые · Категории · Меню). На iPad (≥768 px) вёрстка расширяется.
+
+Все кнопки рабочие:
+
+| Элемент | Что делает |
+|---------|-----------|
+| Микрофон | Сразу открывает экран прослушивания. Одно точное совпадение — открывается карта, несколько — список результатов |
+| Сканер | Камера + jsQR; также код/ссылка вручную и фото с QR |
+| Калькуляция | Себестоимость порции по всем картам, сортировка, переход в расчёт карты |
+| Импорт PDF/Фото | OCR на устройстве (tesseract.js, rus+eng), PDF через pdf.js; результат сохраняется как черновик |
+| QR-код карты | Генерация QR (PNG, ссылка, «Поделиться») |
+| Офлайн-режим | Сохранение карт в IndexedDB, статус кэша, очистка, обновление |
+| Колокольчик | Уведомления о статусе данных/сети/черновиках |
+
+Иконки — собственный SVG-набор (`src/components/Icons.tsx`), без внешних библиотек и emoji. Тяжёлые модули (OCR, PDF, QR)
+подгружаются только при открытии соответствующего экрана.
+
+Фото блюд в mock-данных подгружаются с `loremflickr.com` по тегам блюда; если фото не загрузилось или нет сети,
+показывается SVG-иллюстрация блюда (`src/components/RecipeImage.tsx`). Для карт с сервера используется `imageUrl`.
+Баннеры лежат в `public/banners/`.
 
 ## Tuzilma
 
@@ -60,6 +76,8 @@ Format server API (`GET /api/recipes`) javobiga mos.
 src/
   App.tsx               — asosiy UI (ekranlar, ovozli qidiruv oqimi)
   components/Icons.tsx  — SVG ikonlar
+  components/Banner.tsx — баннер-карусель
+  screens/Tools.tsx     — сканер, QR, калькуляция, импорт, офлайн
   components/RecipeImage.tsx — foto + SVG illyustratsiya
   types.ts              — Recipe va boshqa turlar
   data/mockRecipes.ts   — 30 ta demo karta

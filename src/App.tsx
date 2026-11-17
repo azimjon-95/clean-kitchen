@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  IconBell, IconBack, IconBookmark, IconBox, IconCheck, IconChevronDown, IconChevronRight,
-  IconClose, IconFlame, IconGlobe, IconHome, IconLink, IconMic, IconMinus, IconMore,
-  IconPlus, IconRefresh, IconScale, IconSearch, IconUser, IconVolume, IconWifiOff,
-  IconFish, IconSnow, IconCake, IconUtensils, IconHistory,
-  LogoChef, TileAll, TileMain, TileSalad, TileSauce
+  IconArrowRight, IconBack, IconBell, IconBookmark, IconBox, IconCalc, IconCheck, IconChevronDown,
+  IconChevronRight, IconClock, IconClose, IconCloudDown, IconFish, IconFlame, IconGlobe, IconHistory,
+  IconHome, IconImport, IconLayers, IconLink, IconMic, IconMinus, IconMore, IconPlus, IconQr,
+  IconRefresh, IconScale, IconScan, IconSearch, IconSnow, IconCake, IconUser, IconVolume, IconWifiOff,
+  LogoChef, TileCake, TileCloche, TileGrill, TileSaladBowl, TileSoup
 } from "./components/Icons";
+import { Banner } from "./components/Banner";
 import { RecipeImage } from "./components/RecipeImage";
+import {
+  CalcScreen, ImportScreen, NotificationsScreen, OfflineScreen, QrScreen, ScanScreen, recipeLink
+} from "./screens/Tools";
 import { saveFavorites, loadFavorites, createConnectivityWatcher } from "./lib/offline";
 import { loadRecipes } from "./lib/api";
 import { startSpeech, type SpeechLang } from "./lib/speech";
@@ -14,7 +18,8 @@ import { processVoiceQuery, scoreVoiceMatch } from "./lib/voiceCorrect";
 import { MOCK_RECIPES } from "./data/mockRecipes";
 import type { DataSource, Ingredient, Recipe } from "./types";
 
-type Tab = "home" | "search" | "saved" | "menu";
+type Tab = "home" | "search" | "saved" | "categories" | "menu";
+type View = null | "notifications" | "scan" | "calc" | "import" | "qr" | "offline";
 type DetailTab = "ingredients" | "technology" | "calculation";
 
 const KITCHEN_DEPTS = [
@@ -24,18 +29,21 @@ const KITCHEN_DEPTS = [
   { name: "Кондитерский", icon: <IconCake size={20} />, sections: ["Десерты", "Пекарный", "Заготовка"] }
 ];
 
-const QUICK_CATS = [
-  { label: "Барча\nтаомлар", cat: "", icon: <TileAll />, tone: "rose" },
-  { label: "Соуслар", cat: "Соусы", icon: <TileSauce />, tone: "sand" },
-  { label: "Салатлар", cat: "Салаты", icon: <TileSalad />, tone: "mint" },
-  { label: "Асосий\nтаомлар", cat: "Горячие блюда", icon: <TileMain />, tone: "peach" }
+type Group = { key: string; label: string; cats: string[] | null; tile: ReactNode; tone: string };
+const GROUPS: Group[] = [
+  { key: "all", label: "Все блюда", cats: null, tile: <TileCloche />, tone: "peach" },
+  { key: "soups", label: "Супы", cats: ["Супы"], tile: <TileSoup />, tone: "sand" },
+  { key: "salads", label: "Салаты", cats: ["Салаты"], tile: <TileSaladBowl />, tone: "mint" },
+  { key: "main", label: "Основные", cats: ["Горячие блюда", "Роллы", "Сашими", "Нигири"], tile: <TileGrill />, tone: "rose" },
+  { key: "desserts", label: "Десерты", cats: ["Десерты", "Выпечка"], tile: <TileCake />, tone: "pink" }
 ];
 
-const VOICE_EXAMPLES = ["Соус болоньезе", "Омлет с зеленью", "Путанеско соуси"];
+const VOICE_EXAMPLES = ["Борщ", "Плов", "Салат Цезарь"];
 const UNIT_LABEL: Record<string, string> = { kg: "кг", g: "г", l: "л", ml: "мл", pcs: "шт" };
 const nf3 = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 });
 const nf2 = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 const RECENT_KEY = "ck-recent";
+const DRAFTS_KEY = "ck-drafts";
 
 function formatQty(ing: Ingredient, factor: number): string {
   if (ing.quantity == null || !ing.unit) return ing.amount || "—";
@@ -46,30 +54,34 @@ function formatQty(ing: Ingredient, factor: number): string {
   return `${nf3.format(Number(v.toFixed(3)))} ${u}`;
 }
 
-function readRecent(): string[] {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; }
+function readJson<T>(key: string, fallback: T): T {
+  try { return JSON.parse(localStorage.getItem(key) || "") as T; } catch { return fallback; }
+}
+function writeJson(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* приватный режим */ }
 }
 
 export default function App() {
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [serverRecipes, setServerRecipes] = useState<Recipe[]>([]);
+  const [drafts, setDrafts] = useState<Recipe[]>(() => readJson<Recipe[]>(DRAFTS_KEY, []));
   const [source, setSource] = useState<DataSource>("loading");
   const [apiError, setApiError] = useState<string | undefined>();
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
 
   const [tab, setTab] = useState<Tab>("home");
+  const [view, setView] = useState<View>(null);
   const [query, setQuery] = useState("");
-  const [catFilter, setCatFilter] = useState("");
+  const [group, setGroup] = useState("all");
   const [department, setDepartment] = useState("");
   const [section, setSection] = useState("");
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [recent, setRecent] = useState<string[]>(readRecent);
+  const [recent, setRecent] = useState<string[]>(() => readJson<string[]>(RECENT_KEY, []));
 
   const [selected, setSelected] = useState<Recipe | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("ingredients");
   const [portions, setPortions] = useState(1);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [focusNext, setFocusNext] = useState(false);
   const [toast, setToast] = useState("");
 
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -78,13 +90,15 @@ export default function App() {
   const [voicePreview, setVoicePreview] = useState("");
   const [voiceMsg, setVoiceMsg] = useState("");
   const stopRef = useRef<null | (() => void)>(null);
+
+  const recipes = useMemo(() => [...drafts, ...serverRecipes], [drafts, serverRecipes]);
   const recipesRef = useRef<Recipe[]>([]);
   recipesRef.current = recipes;
 
-  /* ───────── Ma'lumot ───────── */
+  /* ───────── Данные ───────── */
   const sync = useCallback(async () => {
     const r = await loadRecipes();
-    setRecipes(r.recipes);
+    setServerRecipes(r.recipes);
     setSource(r.source);
     setApiError(r.error);
     setLastSync(r.lastSync);
@@ -104,21 +118,21 @@ export default function App() {
     window.setTimeout(() => setToast(""), 1800);
   };
 
-  /* ───────── Karta ochish ───────── */
-  const openRecipe = useCallback((r: Recipe) => {
+  /* ───────── Открытие карты ───────── */
+  const openRecipe = useCallback((r: Recipe, startTab: DetailTab = "ingredients") => {
     setSelected(r);
-    setDetailTab("ingredients");
+    setDetailTab(startTab);
     setPortions(Math.max(1, r.portionCount || 1));
     setMoreOpen(false);
     setRecent((old) => {
-      const next = [r.id, ...old.filter((x) => x !== r.id)].slice(0, 6);
-      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+      const next = [r.id, ...old.filter((x) => x !== r.id)].slice(0, 8);
+      writeJson(RECENT_KEY, next);
       return next;
     });
     window.scrollTo({ top: 0 });
   }, []);
 
-  // QR deep-link: ?recipe=<id>
+  // Ссылка/QR: ?recipe=<id>
   useEffect(() => {
     const rid = new URLSearchParams(window.location.search).get("recipe");
     if (!rid || !recipes.length) return;
@@ -136,36 +150,39 @@ export default function App() {
       return next;
     });
 
-  /* ───────── Qidiruv ───────── */
+  /* ───────── Поиск и категории ───────── */
+  const activeGroup = GROUPS.find((g) => g.key === group) || GROUPS[0];
+  const countOf = useCallback((g: Group) => (g.cats ? recipes.filter((r) => g.cats!.includes(r.category)).length : recipes.length), [recipes]);
+
   const results = useMemo(() => {
     const q = query.trim();
     return recipes.filter((r) =>
+      (!activeGroup.cats || activeGroup.cats.includes(r.category)) &&
       (!department || r.department === department) &&
       (!section || r.section === section) &&
-      (!catFilter || r.category === catFilter) &&
       (!q || scoreVoiceMatch(r, q) >= 40)
     );
-  }, [recipes, query, department, section, catFilter]);
+  }, [recipes, query, activeGroup, department, section]);
 
   const savedList = useMemo(() => recipes.filter((r) => favorites.includes(r.id)), [recipes, favorites]);
-  const homeList = useMemo(() => {
+  const recentList = useMemo(() => {
     const byRecent = recent.map((id) => recipes.find((r) => r.id === id)).filter(Boolean) as Recipe[];
-    if (byRecent.length) return { title: "Сўнгги очилганлар", items: byRecent.slice(0, 4) };
+    if (byRecent.length >= 2) return { title: "Недавно открытые", items: byRecent };
     const pop = recipes.filter((r) => r.popular);
-    return { title: "Машҳур таомлар", items: (pop.length ? pop : recipes).slice(0, 4) };
+    return { title: byRecent.length ? "Недавно открытые" : "Популярные блюда", items: [...byRecent, ...(pop.length ? pop : recipes).filter((r) => !byRecent.includes(r))].slice(0, 8) };
   }, [recipes, recent]);
 
-  const goSearch = (opts: { cat?: string; dept?: string; sec?: string; q?: string; focus?: boolean } = {}) => {
-    setFocusNext(!!opts.focus);
-    setCatFilter(opts.cat ?? "");
+  const goSearch = (opts: { group?: string; dept?: string; sec?: string; q?: string } = {}) => {
+    setGroup(opts.group ?? "all");
     setDepartment(opts.dept ?? "");
     setSection(opts.sec ?? "");
     setQuery(opts.q ?? "");
     setSelected(null);
+    setView(null);
     setTab("search");
   };
 
-  /* ───────── Ovozli qidiruv ───────── */
+  /* ───────── Голосовой поиск ───────── */
   const stopListening = useCallback(() => {
     stopRef.current?.();
     stopRef.current = null;
@@ -180,17 +197,19 @@ export default function App() {
     if (top && top.score >= 80 && (!second || top.score - second.score >= 15)) {
       stopListening();
       setVoiceOpen(false);
+      setView(null);
       setQuery("");
       openRecipe(top.recipe);
     } else if (matches.length > 0) {
       stopListening();
       setVoiceOpen(false);
-      setCatFilter(""); setDepartment(""); setSection("");
+      setGroup("all"); setDepartment(""); setSection("");
       setQuery(q);
       setSelected(null);
+      setView(null);
       setTab("search");
     } else {
-      setVoiceMsg(`«${q}» топилмади. Яна бир бор айтиб кўринг.`);
+      setVoiceMsg(`«${q}» не найдено. Скажите ещё раз.`);
     }
   }, [openRecipe, stopListening]);
 
@@ -207,7 +226,7 @@ export default function App() {
     stopRef.current = stop;
   }, [voiceLang, handleVoiceText]);
 
-  /** Mikrofon bosilishi bilan darrov eshitish sahifasi ochiladi va tinglash boshlanadi */
+  /** Нажатие на микрофон сразу открывает экран прослушивания и запускает запись */
   const openVoice = () => {
     setVoiceOpen(true);
     void startListening();
@@ -216,53 +235,60 @@ export default function App() {
     stopListening();
     setVoiceOpen(false);
   };
-  const onOrb = () => (listening ? stopListening() : void startListening());
 
-  /* ───────── Ovoz chiqarish ───────── */
+  /* ───────── Озвучивание ───────── */
   const speak = (text: string) => {
-    if (!("speechSynthesis" in window)) return showToast("Овоз қўллаб-қувватланмайди");
+    if (!("speechSynthesis" in window)) return showToast("Озвучивание не поддерживается");
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = voiceLang.startsWith("uz") ? "uz-UZ" : "ru-RU";
     u.rate = 0.92;
-    const voices = window.speechSynthesis.getVoices();
-    const v = voices.find((x) => x.lang.startsWith(u.lang.slice(0, 2)));
+    const v = window.speechSynthesis.getVoices().find((x) => x.lang.startsWith(u.lang.slice(0, 2)));
     if (v) u.voice = v;
     window.speechSynthesis.speak(u);
   };
 
   const copyLink = async (r: Recipe) => {
     try {
-      await navigator.clipboard.writeText(`${location.origin}${location.pathname}?recipe=${r.id}`);
-      showToast("Ҳавола нусхаланди");
+      await navigator.clipboard.writeText(recipeLink(r.id));
+      showToast("Ссылка скопирована");
     } catch {
-      showToast("Нусхалаб бўлмади");
+      showToast("Не удалось скопировать");
     }
     setMoreOpen(false);
   };
 
-  /* ───────── Ko'rinish bo'laklari ───────── */
-  const statusText =
-    source === "loading" ? "Уланмоқда…"
-    : source === "server" ? "Онлайн · сервер маълумотлари"
-    : source === "cache" ? `Офлайн · кэш${lastSync ? ` · ${new Date(lastSync).toLocaleDateString("ru-RU")}` : ""}`
-    : `Демо режим · ${MOCK_RECIPES.length} та тест карта`;
+  /* ───────── Черновики импорта ───────── */
+  const saveDraft = (d: Recipe) => {
+    setDrafts((old) => { const next = [d, ...old]; writeJson(DRAFTS_KEY, next); return next; });
+    showToast("Черновик сохранён");
+  };
+  const deleteDraft = (id: string) =>
+    setDrafts((old) => { const next = old.filter((d) => d.id !== id); writeJson(DRAFTS_KEY, next); return next; });
 
-  const searchBar = (onFocus?: () => void, autoFocus?: boolean) => (
-    <div className="searchbar">
-      <IconSearch size={22} />
-      <input
-        value={query}
-        autoFocus={autoFocus}
-        onFocus={onFocus}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Таом номини қидиринг..."
-        aria-label="Қидирув"
-      />
-      {query && (
-        <button className="clear" onClick={() => setQuery("")} aria-label="Тозалаш"><IconClose size={16} /></button>
-      )}
-      <button className="mic-btn" onClick={openVoice} aria-label="Овозли қидирув"><IconMic size={22} /></button>
+  /* ───────── Части интерфейса ───────── */
+  const statusText =
+    source === "loading" ? "Подключение…"
+    : source === "server" ? "Онлайн · данные сервера"
+    : source === "cache" ? `Офлайн · локальный кэш${lastSync ? ` · ${new Date(lastSync).toLocaleDateString("ru-RU")}` : ""}`
+    : `Демо-режим · ${MOCK_RECIPES.length} тестовых карт`;
+  const needsAttention = !isOnline || source === "mock" || source === "cache";
+
+  const searchBar = (withScan = false) => (
+    <div className="searchrow">
+      <div className="searchbar">
+        <IconSearch size={22} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Блюдо или ингредиент…"
+          aria-label="Поиск по блюдам и ингредиентам"
+          enterKeyHint="search"
+        />
+        {query && <button className="clear" onClick={() => setQuery("")} aria-label="Очистить"><IconClose size={16} /></button>}
+        <button className="mic-btn" onClick={openVoice} aria-label="Голосовой поиск"><IconMic size={22} /></button>
+      </div>
+      {withScan && <button className="scan-btn" onClick={() => setView("scan")} aria-label="Сканировать QR-код"><IconScan size={26} /></button>}
     </div>
   );
 
@@ -272,16 +298,11 @@ export default function App() {
         <RecipeImage recipe={r} className="row-img" />
         <span className="row-text">
           <b>{r.name}</b>
-          <small>Чиқиш: {r.yield}</small>
-          {(r.section || r.department) && <em>{[r.department, r.section].filter(Boolean).join(" · ")}</em>}
+          <small>Выход: {r.yield}</small>
+          {(r.section || r.department || r.category) && <em>{[r.department, r.section || r.category].filter(Boolean).join(" · ")}</em>}
         </span>
       </button>
-      <button
-        className={favorites.includes(r.id) ? "bm on" : "bm"}
-        onClick={() => toggleFavorite(r.id)}
-        aria-label="Сақлаш"
-        aria-pressed={favorites.includes(r.id)}
-      >
+      <button className={favorites.includes(r.id) ? "bm on" : "bm"} onClick={() => toggleFavorite(r.id)} aria-label="В закладки" aria-pressed={favorites.includes(r.id)}>
         <IconBookmark size={22} filled={favorites.includes(r.id)} />
       </button>
     </article>
@@ -294,16 +315,16 @@ export default function App() {
       <div className="rows">{items.map((r, i) => recipeRow(r, i))}</div>
     );
 
-  const empty = (title: string, text: string, action?: [string, () => void]) => (
+  const empty = (title: string, text: string, action?: [string, () => void], icon?: ReactNode) => (
     <div className="empty">
-      <div className="empty-ico"><IconSearch size={30} /></div>
+      <div className="empty-ico">{icon || <IconSearch size={30} />}</div>
       <b>{title}</b>
       <span>{text}</span>
       {action && <button className="btn-soft" onClick={action[1]}>{action[0]}</button>}
     </div>
   );
 
-  /* ───────── Karta sahifasi ───────── */
+  /* ───────── Экран карты ───────── */
   const renderDetail = (r: Recipe) => {
     const base = Math.max(1, r.portionCount || 1);
     const factor = portions / base;
@@ -313,50 +334,50 @@ export default function App() {
         <div className="hero">
           <RecipeImage recipe={r} className="hero-img" />
           <div className="hero-shade" />
-          <button className="round-btn left" onClick={() => setSelected(null)} aria-label="Орқага"><IconBack size={22} /></button>
+          <button className="round-btn left" onClick={() => setSelected(null)} aria-label="Назад"><IconBack size={22} /></button>
           <div className="hero-right">
-            <button className="round-btn" onClick={() => toggleFavorite(r.id)} aria-label="Сақлаш">
-              <IconBookmark size={21} filled={favorites.includes(r.id)} />
-            </button>
-            <button className="round-btn" onClick={() => setMoreOpen((v) => !v)} aria-label="Яна"><IconMore size={21} /></button>
+            <button className="round-btn" onClick={() => toggleFavorite(r.id)} aria-label="В закладки"><IconBookmark size={21} filled={favorites.includes(r.id)} /></button>
+            <button className="round-btn" onClick={() => setMoreOpen((v) => !v)} aria-label="Ещё"><IconMore size={21} /></button>
             {moreOpen && (
               <div className="popover" role="menu">
                 <button onClick={() => { speak(`${r.name}. ${r.ingredients.map((i) => `${i.name} ${formatQty(i, factor)}`).join(". ")}`); setMoreOpen(false); }}>
-                  <IconVolume size={18} /> Овозда ўқиш
+                  <IconVolume size={18} /> Прослушать состав
                 </button>
-                <button onClick={() => copyLink(r)}><IconLink size={18} /> Ҳаволани нусхалаш</button>
+                <button onClick={() => copyLink(r)}><IconLink size={18} /> Копировать ссылку</button>
+                <button onClick={() => { setMoreOpen(false); setSelected(null); setView("qr"); }}><IconQr size={18} /> QR-код карты</button>
               </div>
             )}
           </div>
         </div>
 
         <div className="sheet">
-          <span className="pill">Технологик карта</span>
+          <span className="pill">Технологическая карта</span>
           <h1>{r.name}</h1>
           <div className="chips">
-            <span className="chip-meta"><IconScale size={19} /> Чиқиш: <b>{r.yield}</b></span>
+            <span className="chip-meta"><IconScale size={19} /> Выход: <b>{r.yield}</b></span>
             <span className="chip-meta">
               <IconBox size={19} /> Порция:
               {r.portionCount ? (
                 <span className="stepper">
-                  <button onClick={() => setPortions((v) => Math.max(1, v - 1))} aria-label="Камайтириш"><IconMinus size={14} /></button>
+                  <button onClick={() => setPortions((v) => Math.max(1, v - 1))} aria-label="Уменьшить"><IconMinus size={14} /></button>
                   <b>{portions}</b>
-                  <button onClick={() => setPortions((v) => Math.min(10000, v + 1))} aria-label="Кўпайтириш"><IconPlus size={14} /></button>
+                  <button onClick={() => setPortions((v) => Math.min(10000, v + 1))} aria-label="Увеличить"><IconPlus size={14} /></button>
                 </span>
               ) : <b>1</b>}
             </span>
+            {r.time && r.time !== "—" && <span className="chip-meta"><IconClock size={19} /> <b>{r.time}</b></span>}
           </div>
           {r.description && <p className="desc">{r.description}</p>}
 
           <div className="seg" role="tablist">
-            {([["ingredients", "Ингредиентлар"], ["technology", "Технология"], ["calculation", "Калькуляция"]] as [DetailTab, string][]).map(([k, l]) => (
+            {([["ingredients", "Ингредиенты"], ["technology", "Технология"], ["calculation", "Калькуляция"]] as [DetailTab, string][]).map(([k, l]) => (
               <button key={k} role="tab" aria-selected={detailTab === k} className={detailTab === k ? "on" : ""} onClick={() => setDetailTab(k)}>{l}</button>
             ))}
           </div>
 
           {detailTab === "ingredients" && (
             <div className="table">
-              <div className="thead"><span>№</span><span>Маҳсулот</span><span>Нетто ({portions} порц.)</span></div>
+              <div className="thead"><span>№</span><span>Продукт</span><span>Нетто ({portions} порц.)</span></div>
               {r.ingredients.map((i, n) => (
                 <div className="trow" key={`${i.name}-${n}`}>
                   <span className="num">{n + 1}</span>
@@ -364,6 +385,7 @@ export default function App() {
                   <b>{r.portionCount ? formatQty(i, factor) : i.amount}</b>
                 </div>
               ))}
+              {r.ingredients.length === 0 && empty("Состав не указан", "В этой карте нет ингредиентов.")}
             </div>
           )}
 
@@ -373,8 +395,8 @@ export default function App() {
                 <li key={n}>
                   <span className="step-n">{n + 1}</span>
                   <p>{s}</p>
-                  {r.stepImages?.[n] && <img className="step-img" src={r.stepImages[n]} alt={`Қадам ${n + 1}`} />}
-                  <button className="step-voice" onClick={() => speak(s)} aria-label="Овозда ўқиш"><IconVolume size={18} /></button>
+                  {r.stepImages?.[n] && <img className="step-img" src={r.stepImages[n]} alt={`Шаг ${n + 1}`} />}
+                  <button className="step-voice" onClick={() => speak(s)} aria-label="Прослушать шаг"><IconVolume size={18} /></button>
                 </li>
               ))}
             </ol>
@@ -383,12 +405,12 @@ export default function App() {
           {detailTab === "calculation" && (cost ? (
             <>
               <div className="cost-card">
-                <span>Умумий таннарх · {portions} порция</span>
+                <span>Общая себестоимость · {portions} порц.</span>
                 <b>{nf2.format(cost.total * factor)} {r.costCurrency || "UZS"}</b>
                 {cost.perPortion !== null && <small>1 порция: {nf2.format(cost.perPortion)} {r.costCurrency || "UZS"}</small>}
               </div>
               <div className="table">
-                <div className="thead two"><span>Маҳсулот</span><span>Қиймати</span></div>
+                <div className="thead two"><span>Продукт</span><span>Стоимость</span></div>
                 {cost.lines?.map((l, n) => (
                   <div className="trow two" key={`${l.name}-${n}`}>
                     <span>{l.name}</span>
@@ -396,90 +418,173 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              {!cost.complete && <p className="note">Айрим маҳсулотлар учун нарх киритилмаган.</p>}
+              {!cost.complete && <p className="note">Для некоторых продуктов не указана цена.</p>}
             </>
-          ) : empty("Калькуляция йўқ", "Бу карта учун нархлар киритилмаган."))}
+          ) : empty("Калькуляции нет", "Для этой карты не указаны закупочные цены."))}
         </div>
       </div>
     );
   };
 
-  /* ───────── Tab sahifalari ───────── */
-  const renderHome = () => (
-    <>
-      <header className="home-head">
-        <div className="brand">
-          <LogoChef size={46} />
-          <div><b>Clean Kitchen</b><small>Технологик карталар</small></div>
-        </div>
-        <button className="bell" onClick={() => showToast("Янги хабарлар йўқ")} aria-label="Хабарлар"><IconBell size={24} /></button>
-      </header>
-      <section className="greet">
-        <h1>Хайрли иш, Повар!</h1>
-        <p>Керакли рецептни тез топинг</p>
-      </section>
-      {searchBar(() => goSearch({ focus: true, q: query }))}
-      <div className="cats">
-        {QUICK_CATS.map((c) => (
-          <button key={c.label} className="cat" onClick={() => goSearch({ cat: c.cat })}>
-            <span className={`cat-ico ${c.tone}`}>{c.icon}</span>
-            <span className="cat-label">{c.label}</span>
+  /* ───────── Вкладки ───────── */
+  const renderHome = () => {
+    const q = query.trim();
+    return (
+      <>
+        <header className="home-head">
+          <div className="brand">
+            <LogoChef size={46} />
+            <div><b>Clean Kitchen</b><small>Технологические карты</small></div>
+          </div>
+          <button className="bell" onClick={() => setView("notifications")} aria-label="Уведомления">
+            <IconBell size={25} />
+            {needsAttention && <i className="dot" />}
           </button>
-        ))}
-      </div>
-      <div className="sect-head">
-        <h2>{homeList.title}</h2>
-        <button onClick={() => goSearch()} aria-label="Барчаси"><IconChevronRight size={22} /></button>
-      </div>
-      {list(homeList.items)}
-      <button className="all-link" onClick={() => goSearch()}>Барча {recipes.length} та картани кўриш <IconChevronRight size={16} /></button>
-    </>
-  );
+        </header>
+
+        {!q && (
+          <Banner slides={[
+            { src: "banners/hero-recipes.webp", alt: "Технологические карты блюд — открыть все блюда", onClick: () => goSearch() },
+            { src: "banners/hero-cost.webp", alt: "Точная стоимость каждого блюда — открыть калькуляцию", onClick: () => setView("calc") },
+            { src: "banners/hero-import.webp", alt: "Импорт рецептов из PDF и фото", onClick: () => setView("import") },
+            { src: "banners/hero-voice.webp", alt: "Голосовой поиск рецептов", onClick: openVoice }
+          ]} />
+        )}
+
+        <section className="greet">
+          <h1>Добро пожаловать, Повар!</h1>
+          <p>Найдите нужный рецепт за секунды</p>
+        </section>
+
+        {searchBar(true)}
+
+        {q ? (
+          <>
+            <div className="count">Найдено карт: {results.length}</div>
+            {results.length || source === "loading" ? list(results) : empty("Ничего не найдено", "Измените запрос или выберите категорию.", ["Сбросить поиск", () => setQuery("")])}
+          </>
+        ) : (
+          <>
+            <div className="cats">
+              {GROUPS.map((g, i) => (
+                <button key={g.key} className={i === 0 ? "cat sel" : "cat"} onClick={() => goSearch({ group: g.key })}>
+                  <span className={`cat-ico ${g.tone}`}>{g.tile}</span>
+                  <span className="cat-label">{g.label}</span>
+                  <span className="cat-count">{countOf(g)}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="sect-head">
+              <h2>{recentList.title}</h2>
+              <button className="link" onClick={() => goSearch()}>Смотреть все <IconArrowRight size={17} /></button>
+            </div>
+            {source === "loading" ? (
+              <div className="hscroll">{[0, 1, 2].map((i) => <div key={i} className="rcard skeleton" />)}</div>
+            ) : (
+              <div className="hscroll">
+                {recentList.items.map((r) => (
+                  <article key={r.id} className="rcard">
+                    <button className="rcard-main" onClick={() => openRecipe(r)}>
+                      <RecipeImage recipe={r} className="rcard-img" />
+                      {recent.includes(r.id) && <span className="rcard-clock"><IconClock size={18} /></span>}
+                      <span className="rcard-body">
+                        <b>{r.name}</b>
+                        <small>{[r.department?.replace(" цех", ""), r.section || r.category].filter(Boolean).join(" • ")}</small>
+                        <em>Выход: {r.yield}</em>
+                      </span>
+                    </button>
+                    <button className={favorites.includes(r.id) ? "rcard-bm on" : "rcard-bm"} onClick={() => toggleFavorite(r.id)} aria-label="В закладки" aria-pressed={favorites.includes(r.id)}>
+                      <IconBookmark size={22} filled={favorites.includes(r.id)} />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            <div className="quick" role="group" aria-label="Быстрые действия">
+              <button onClick={() => setView("calc")}><span className="q-ico blue"><IconCalc size={26} /></span><span>Калькуляция</span></button>
+              <button onClick={() => setView("import")}><span className="q-ico violet"><IconImport size={26} /></span><span>Импорт<br />(PDF/Фото)</span></button>
+              <button onClick={() => setView("qr")}><span className="q-ico orange"><IconQr size={26} /></span><span>QR-код<br />карты</span></button>
+              <button onClick={() => setView("offline")}><span className="q-ico green"><IconCloudDown size={26} /></span><span>Офлайн<br />режим</span></button>
+            </div>
+          </>
+        )}
+      </>
+    );
+  };
 
   const activeDept = KITCHEN_DEPTS.find((d) => d.name === department);
   const renderSearch = () => (
     <>
-      <h1 className="page-title">Қидирув</h1>
-      {searchBar(undefined, focusNext)}
-      <div className="chip-row" role="group" aria-label="Цехлар">
-        <button className={!department ? "fchip on" : "fchip"} onClick={() => { setDepartment(""); setSection(""); }}>Барча цехлар</button>
+      <h1 className="page-title">Поиск</h1>
+      {searchBar()}
+      <div className="chip-row" role="group" aria-label="Категории">
+        {GROUPS.map((g) => (
+          <button key={g.key} className={group === g.key ? "fchip on" : "fchip"} onClick={() => setGroup(g.key)}>{g.label}</button>
+        ))}
+      </div>
+      <div className="chip-row sub" role="group" aria-label="Цеха">
+        <button className={!department ? "fchip alt on" : "fchip alt"} onClick={() => { setDepartment(""); setSection(""); }}>Все цеха</button>
         {KITCHEN_DEPTS.map((d) => (
-          <button key={d.name} className={department === d.name ? "fchip on" : "fchip"} onClick={() => { setDepartment(d.name); setSection(""); }}>{d.name}</button>
+          <button key={d.name} className={department === d.name ? "fchip alt on" : "fchip alt"} onClick={() => { setDepartment(d.name); setSection(""); }}>{d.name}</button>
         ))}
       </div>
       {activeDept && (
         <div className="chip-row sub">
-          <button className={!section ? "fchip on" : "fchip"} onClick={() => setSection("")}>Барча участкалар</button>
+          <button className={!section ? "fchip alt on" : "fchip alt"} onClick={() => setSection("")}>Все участки</button>
           {activeDept.sections.map((s) => (
-            <button key={s} className={section === s ? "fchip on" : "fchip"} onClick={() => setSection(s)}>{s}</button>
+            <button key={s} className={section === s ? "fchip alt on" : "fchip alt"} onClick={() => setSection(s)}>{s}</button>
           ))}
         </div>
       )}
-      {catFilter && (
-        <div className="active-filter">
-          <span>Категория: <b>{catFilter}</b></span>
-          <button onClick={() => setCatFilter("")} aria-label="Тозалаш"><IconClose size={15} /></button>
-        </div>
-      )}
-      <div className="count">{results.length} та карта топилди</div>
-      {results.length || source === "loading" ? list(results) : (
-        empty("Ҳеч нарса топилмади", "Сўровни ўзгартиринг ёки фильтрларни тозаланг.", ["Фильтрларни тозалаш", () => goSearch()])
-      )}
+      <div className="count">Найдено карт: {results.length}</div>
+      {results.length || source === "loading" ? list(results) : empty("Ничего не найдено", "Измените запрос или сбросьте фильтры.", ["Сбросить фильтры", () => goSearch()])}
     </>
   );
 
   const renderSaved = () => (
     <>
-      <h1 className="page-title">Сақланган</h1>
-      {savedList.length ? list(savedList) : (
-        <div className="empty">
-          <div className="empty-ico"><IconBookmark size={30} /></div>
-          <b>Сақланган карталар йўқ</b>
-          <span>Карта устидаги хатчўп тугмасини босинг — у шу ерда пайдо бўлади.</span>
-          <button className="btn-soft" onClick={() => setTab("home")}>Бош саҳифага</button>
-        </div>
-      )}
+      <h1 className="page-title">Сохранённые</h1>
+      {savedList.length ? list(savedList) : empty("Нет сохранённых карт", "Нажмите на закладку у карты — она появится здесь.", ["На главную", () => setTab("home")], <IconBookmark size={30} />)}
     </>
+  );
+
+  const renderCategories = () => (
+    <>
+      <h1 className="page-title">Категории</h1>
+      <div className="group-grid">
+        {GROUPS.map((g) => (
+          <button key={g.key} className="group-card" onClick={() => goSearch({ group: g.key })}>
+            <span className={`cat-ico ${g.tone}`}>{g.tile}</span>
+            <b>{g.label}</b>
+            <small>{countOf(g)} карт</small>
+          </button>
+        ))}
+      </div>
+      <h3 className="menu-h">Цеха и участки</h3>
+      <div className="menu-list">
+        {KITCHEN_DEPTS.map((d) => (
+          <button key={d.name} onClick={() => goSearch({ dept: d.name })}>
+            <span className="menu-ico">{d.icon}</span>
+            <span className="menu-text">
+              <b>{d.name}</b>
+              <small>{d.sections.join(" · ")}</small>
+            </span>
+            <span className="menu-count">{recipes.filter((r) => r.department === d.name).length}</span>
+            <IconChevronRight size={18} />
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
+  const menuItem = (icon: ReactNode, title: string, sub: string, onClick: () => void) => (
+    <button key={title} onClick={onClick}>
+      <span className="menu-ico">{icon}</span>
+      <span className="menu-text"><b>{title}</b><small>{sub}</small></span>
+      <IconChevronRight size={18} />
+    </button>
   );
 
   const renderMenu = () => (
@@ -487,103 +592,112 @@ export default function App() {
       <h1 className="page-title">Меню</h1>
       <div className="profile">
         <span className="avatar">П</span>
-        <div><b>Повар</b><small>Иш профили</small></div>
+        <div><b>Повар</b><small>Рабочий профиль</small></div>
       </div>
 
-      <h3 className="menu-h">Цехлар ва участкалар</h3>
+      <h3 className="menu-h">Инструменты</h3>
       <div className="menu-list">
-        {KITCHEN_DEPTS.map((d) => (
-          <button key={d.name} onClick={() => goSearch({ dept: d.name })}>
-            <span className="menu-ico">{d.icon}</span>
-            <span className="menu-text"><b>{d.name}</b><small>{d.sections.join(" · ")}</small></span>
-            <IconChevronRight size={18} />
-          </button>
-        ))}
-        <button onClick={() => { setCatFilter(""); setTab("saved"); }}>
-          <span className="menu-ico"><IconBookmark size={20} /></span>
-          <span className="menu-text"><b>Сақланганлар</b><small>{favorites.length} та карта</small></span>
-          <IconChevronRight size={18} />
-        </button>
-        <button onClick={() => { setRecent([]); try { localStorage.removeItem(RECENT_KEY); } catch { /* noop */ } showToast("Тарих тозаланди"); }}>
-          <span className="menu-ico"><IconHistory size={20} /></span>
-          <span className="menu-text"><b>Тарихни тозалаш</b><small>Сўнгги очилганлар рўйхати</small></span>
-          <IconChevronRight size={18} />
-        </button>
+        {menuItem(<IconCalc size={20} />, "Калькуляция", "Себестоимость блюд и порций", () => setView("calc"))}
+        {menuItem(<IconImport size={20} />, "Импорт PDF / Фото", `Распознавание карт · черновиков: ${drafts.length}`, () => setView("import"))}
+        {menuItem(<IconQr size={20} />, "QR-код карты", "Создать код для карты", () => setView("qr"))}
+        {menuItem(<IconScan size={20} />, "Сканер QR-кода", "Открыть карту по коду", () => setView("scan"))}
+        {menuItem(<IconCloudDown size={20} />, "Офлайн-режим", "Карты на устройстве без интернета", () => setView("offline"))}
+        {menuItem(<IconBell size={20} />, "Уведомления", needsAttention ? "Есть важные сообщения" : "Всё в порядке", () => setView("notifications"))}
+        {menuItem(<IconHistory size={20} />, "Очистить историю", "Список недавно открытых", () => { setRecent([]); writeJson(RECENT_KEY, []); showToast("История очищена"); })}
       </div>
 
-      <h3 className="menu-h">Маълумот манбаи</h3>
+      <h3 className="menu-h">Источник данных</h3>
       <div className={`source-card ${source}`}>
         <div>
           <b>{statusText}</b>
           {apiError && source !== "server" && <small>{apiError}</small>}
         </div>
         {source !== "loading" && source !== "server" && (
-          <button className="btn-soft" onClick={() => sync()}><IconRefresh size={16} /> {source === "mock" ? "Серверга уланиш" : "Янгилаш"}</button>
+          <button className="btn-soft" onClick={() => sync()}><IconRefresh size={16} /> {source === "mock" ? "Подключиться" : "Обновить"}</button>
         )}
       </div>
       <p className="version">CLEAN KITCHEN · V12</p>
     </>
   );
 
-  /* ───────── Ovozli sahifa ───────── */
+  /* ───────── Экран голосового поиска ───────── */
   const renderVoice = () => (
-    <div className="voice" role="dialog" aria-label="Овозли қидирув">
-      <button className="voice-x" onClick={closeVoice} aria-label="Ёпиш"><IconClose size={26} /></button>
-      <h2>Овозли қидирув</h2>
+    <div className="voice" role="dialog" aria-label="Голосовой поиск">
+      <button className="voice-x" onClick={closeVoice} aria-label="Закрыть"><IconClose size={26} /></button>
+      <h2>Голосовой поиск</h2>
       <div className="orb-wrap">
         <span className={listening ? "ring r1 on" : "ring r1"} />
         <span className={listening ? "ring r2 on" : "ring r2"} />
-        <button className={listening ? "orb on" : "orb"} onClick={onOrb} aria-label="Микрофон"><IconMic size={52} filled /></button>
+        <button className={listening ? "orb on" : "orb"} onClick={() => (listening ? stopListening() : void startListening())} aria-label="Микрофон"><IconMic size={52} filled /></button>
       </div>
       <div className={listening ? "wave on" : "wave"} aria-hidden="true">
         {Array.from({ length: 21 }).map((_, i) => (
           <i key={i} style={{ ["--h" as string]: `${[10, 16, 26, 18, 34, 22, 44, 28, 52, 30, 58, 30, 52, 28, 44, 22, 34, 18, 26, 16, 10][i]}px`, animationDelay: `${(i % 7) * 70}ms` }} />
         ))}
       </div>
-      <h3>{listening ? "Гапиринг..." : "Микрофонни босинг"}</h3>
+      <h3>{listening ? "Слушаю…" : "Нажмите на микрофон"}</h3>
       <p className="voice-status" aria-live="polite">{voicePreview || voiceMsg}</p>
       <div className="examples">
-        <span>Масалан:</span>
+        <span>Например:</span>
         {VOICE_EXAMPLES.map((ex) => (
-          <button key={ex} onClick={() => { stopListening(); setVoicePreview(ex); handleVoiceText(ex); }}>„{ex}“</button>
+          <button key={ex} onClick={() => { stopListening(); setVoicePreview(ex); handleVoiceText(ex); }}>«{ex}»</button>
         ))}
       </div>
       <label className="lang-pill">
         <IconGlobe size={22} />
-        <span>{voiceLang === "ru-RU" ? "Русча / Ўзбекча" : "Ўзбекча"}</span>
+        <span>{voiceLang === "ru-RU" ? "Русский" : "Узбекский"}</span>
         <IconChevronDown size={20} />
-        <select
-          value={voiceLang}
-          onChange={(e) => { stopListening(); setVoiceLang(e.target.value as SpeechLang); }}
-          aria-label="Тил"
-        >
-          <option value="ru-RU">Русча / Ўзбекча</option>
-          <option value="uz-UZ">Ўзбекча</option>
+        <select value={voiceLang} onChange={(e) => { stopListening(); setVoiceLang(e.target.value as SpeechLang); }} aria-label="Язык распознавания">
+          <option value="ru-RU">Русский</option>
+          <option value="uz-UZ">Узбекский</option>
         </select>
       </label>
     </div>
   );
 
-  const navItems: { id: Tab; label: string; icon: (f: boolean) => JSX.Element }[] = [
-    { id: "home", label: "Бош саҳифа", icon: (f) => <IconHome size={26} filled={f} /> },
-    { id: "search", label: "Қидирув", icon: () => <IconSearch size={26} /> },
-    { id: "saved", label: "Сақланган", icon: (f) => <IconBookmark size={26} filled={f} /> },
+  /* ───────── Экраны-инструменты ───────── */
+  const closeView = () => setView(null);
+  const renderView = (v: Exclude<View, null>) => {
+    switch (v) {
+      case "notifications":
+        return <NotificationsScreen source={source} isOnline={isOnline} apiError={apiError} lastSync={lastSync} draftCount={drafts.length} favCount={favorites.length}
+          onSync={() => { void sync(); }} onOffline={() => setView("offline")} onImport={() => setView("import")} onBack={closeView} />;
+      case "scan":
+        return <ScanScreen recipes={recipes} onOpen={(r) => { setView(null); openRecipe(r); }} onBack={closeView} />;
+      case "calc":
+        return <CalcScreen recipes={recipes} onOpen={(r) => openRecipe(r, "calculation")} onBack={closeView} />;
+      case "qr":
+        return <QrScreen recipes={recipes} onScan={() => setView("scan")} onBack={closeView} />;
+      case "offline":
+        return <OfflineScreen recipes={recipes} source={source} isOnline={isOnline} onSync={sync} onBack={closeView} />;
+      case "import":
+        return <ImportScreen drafts={drafts} onSave={saveDraft} onDelete={deleteDraft} onOpen={(r) => openRecipe(r)} onBack={closeView} />;
+    }
+  };
+
+  const navItems: { id: Tab; label: string; icon: (f: boolean) => ReactNode }[] = [
+    { id: "home", label: "Главная", icon: (f) => <IconHome size={26} filled={f} /> },
+    { id: "search", label: "Поиск", icon: () => <IconSearch size={26} /> },
+    { id: "saved", label: "Сохранённые", icon: (f) => <IconBookmark size={26} filled={f} /> },
+    { id: "categories", label: "Категории", icon: () => <IconLayers size={26} /> },
     { id: "menu", label: "Меню", icon: (f) => <IconUser size={26} filled={f} /> }
   ];
 
+  const overlay = voiceOpen || !!selected || !!view;
   return (
     <div className="app">
-      {!isOnline && <div className="offline-bar"><IconWifiOff size={15} /> Тармоқ йўқ — сақланган маълумотлар ишлатилмоқда</div>}
-      {voiceOpen ? renderVoice() : selected ? renderDetail(selected) : (
+      {!isOnline && <div className="offline-bar"><IconWifiOff size={15} /> Нет сети — используются сохранённые данные</div>}
+      {voiceOpen ? renderVoice() : selected ? renderDetail(selected) : view ? renderView(view) : (
         <main className="screen" key={tab}>
           {tab === "home" && renderHome()}
           {tab === "search" && renderSearch()}
           {tab === "saved" && renderSaved()}
+          {tab === "categories" && renderCategories()}
           {tab === "menu" && renderMenu()}
         </main>
       )}
-      {!voiceOpen && !selected && (
-        <nav className="tabbar" aria-label="Асосий меню">
+      {!overlay && (
+        <nav className="tabbar" aria-label="Основная навигация">
           {navItems.map((n) => (
             <button key={n.id} className={tab === n.id ? "on" : ""} onClick={() => setTab(n.id)} aria-current={tab === n.id ? "page" : undefined}>
               {n.icon(tab === n.id)}
