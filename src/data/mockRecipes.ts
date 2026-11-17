@@ -306,6 +306,25 @@ const raw: Raw[] = [
 
 const ISO_BASE = Date.UTC(2026, 10, 1);
 
+/**
+ * Har bir taomga mos real foto (Flickr teglari bo'yicha, lock — har safar bir xil rasm).
+ * Foto yuklanmasa, ilova taomning SVG illyustratsiyasini ko'rsatadi (RecipeImage).
+ */
+const PHOTO_TAGS: Record<string, string> = {
+  r1: "bolognese,pasta", r2: "puttanesca,pasta", r7: "mushroom,cream,sauce",
+  r8: "carbonara", r9: "seafood,pasta", r10: "fettuccine,alfredo",
+  r4: "grilled,chicken,breast", r11: "shashlik,lamb,skewers", r12: "lula,kebab",
+  r3: "omelette,herbs", r6: "mushroom,soup", r13: "plov,pilaf",
+  r14: "chicken,broth", r15: "caramelized,onions", r16: "philadelphia,sushi,roll",
+  r17: "california,roll,sushi", r18: "baked,sushi,roll", r19: "salmon,sashimi",
+  r20: "tuna,nigiri", r21: "sushi,rice", r5: "vegetable,salad",
+  r22: "caesar,salad", r23: "tomato,onion,salad", r24: "bruschetta",
+  r25: "cheese,platter", r26: "caesar,dressing", r27: "tiramisu",
+  r28: "cheesecake", r29: "croissant", r30: "pastry,cream,custard"
+};
+const photo = (id: string, n: number) =>
+  `https://loremflickr.com/640/480/${PHOTO_TAGS[id] ?? "food"}?lock=${n}`;
+
 export const MOCK_RECIPES: Recipe[] = raw.map((r, i) => ({
   id: r.id,
   name: r.name,
@@ -325,6 +344,7 @@ export const MOCK_RECIPES: Recipe[] = raw.map((r, i) => ({
   steps: r.steps,
   tags: r.tags,
   popular: r.popular,
+  imageUrl: photo(r.id, i + 1),
   cost: buildCost(r.ingredients, r.portions),
   costCurrency: "UZS",
   version: 1,

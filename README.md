@@ -45,11 +45,22 @@ Har bir kartada: ingredientlar (miqdor + birlik → porsiya bo'yicha masshtablas
 texnologiya bosqichlari, food cost (UZS) va qidiruv uchun RU/UZ teglar.
 Format server API (`GET /api/recipes`) javobiga mos.
 
+## Dizayn va ovozli qidiruv
+
+- Mobil-birinchi dizayn (Bosh sahifa · Қидирув · Сақланган · Меню), interfeys o'zbek kirillchasida.
+- Barcha ikonlar o'zimizning SVG to'plamimizda (`src/components/Icons.tsx`), tashqi kutubxonasiz.
+- Bosh sahifa yoki qidiruvdagi mikrofon bosilishi bilan **darrov eshitish sahifasi** ochiladi va tinglash boshlanadi.
+  Aniq bitta karta topilsa — karta sahifasi ochiladi; bir nechta bo'lsa — natijalar ro'yxati; topilmasa — yana urinib ko'rish.
+- Taom rasmlari: mock kartalarda real foto (`loremflickr.com`, taomga mos teglar). Foto yuklanmasa yoki offline bo'lsa,
+  taomning SVG illyustratsiyasi ko'rinadi (`src/components/RecipeImage.tsx`). Server kartalarida `imageUrl` ishlatiladi.
+
 ## Tuzilma
 
 ```
 src/
-  App.tsx               — asosiy UI
+  App.tsx               — asosiy UI (ekranlar, ovozli qidiruv oqimi)
+  components/Icons.tsx  — SVG ikonlar
+  components/RecipeImage.tsx — foto + SVG illyustratsiya
   types.ts              — Recipe va boshqa turlar
   data/mockRecipes.ts   — 30 ta demo karta
   lib/api.ts            — server/kesh/mock yuklash
