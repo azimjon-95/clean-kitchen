@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/types.ts","./src/data/mockRecipes.ts","./src/lib/api.ts","./src/lib/offline.ts","./src/lib/speech.ts","./src/lib/voiceCorrect.ts"],"version":"5.9.3"}
