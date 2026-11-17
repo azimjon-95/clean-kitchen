@@ -9,8 +9,9 @@ import {
 import { Banner } from "./components/Banner";
 import { RecipeImage } from "./components/RecipeImage";
 import {
-  CalcScreen, ImportScreen, NotificationsScreen, OfflineScreen, QrScreen, ScanScreen, recipeLink
+  CalcScreen, NotificationsScreen, OfflineScreen, QrScreen, recipeLink
 } from "./screens/Tools";
+import { SmartScanner } from "./screens/Scanner";
 import { saveFavorites, loadFavorites, createConnectivityWatcher } from "./lib/offline";
 import { loadRecipes } from "./lib/api";
 import { startSpeech, type SpeechLang } from "./lib/speech";
@@ -261,7 +262,7 @@ export default function App() {
   /* ───────── Черновики импорта ───────── */
   const saveDraft = (d: Recipe) => {
     setDrafts((old) => { const next = [d, ...old]; writeJson(DRAFTS_KEY, next); return next; });
-    showToast("Черновик сохранён");
+    showToast("Карточка сохранена");
   };
   const deleteDraft = (id: string) =>
     setDrafts((old) => { const next = old.filter((d) => d.id !== id); writeJson(DRAFTS_KEY, next); return next; });
@@ -288,7 +289,7 @@ export default function App() {
         {query && <button className="clear" onClick={() => setQuery("")} aria-label="Очистить"><IconClose size={16} /></button>}
         <button className="mic-btn" onClick={openVoice} aria-label="Голосовой поиск"><IconMic size={22} /></button>
       </div>
-      {withScan && <button className="scan-btn" onClick={() => setView("scan")} aria-label="Сканировать QR-код"><IconScan size={26} /></button>}
+      {withScan && <button className="scan-btn" onClick={() => setView("scan")} aria-label="Сканер документов и QR-кода"><IconScan size={26} /></button>}
     </div>
   );
 
@@ -598,9 +599,9 @@ export default function App() {
       <h3 className="menu-h">Инструменты</h3>
       <div className="menu-list">
         {menuItem(<IconCalc size={20} />, "Калькуляция", "Себестоимость блюд и порций", () => setView("calc"))}
-        {menuItem(<IconImport size={20} />, "Импорт PDF / Фото", `Распознавание карт · черновиков: ${drafts.length}`, () => setView("import"))}
+        {menuItem(<IconImport size={20} />, "Импорт PDF / Фото", `Фото и PDF → карточка · импортировано: ${drafts.length}`, () => setView("import"))}
         {menuItem(<IconQr size={20} />, "QR-код карты", "Создать код для карты", () => setView("qr"))}
-        {menuItem(<IconScan size={20} />, "Сканер QR-кода", "Открыть карту по коду", () => setView("scan"))}
+        {menuItem(<IconScan size={20} />, "Сканер документов", "Камера, фото, PDF и QR-код", () => setView("scan"))}
         {menuItem(<IconCloudDown size={20} />, "Офлайн-режим", "Карты на устройстве без интернета", () => setView("offline"))}
         {menuItem(<IconBell size={20} />, "Уведомления", needsAttention ? "Есть важные сообщения" : "Всё в порядке", () => setView("notifications"))}
         {menuItem(<IconHistory size={20} />, "Очистить историю", "Список недавно открытых", () => { setRecent([]); writeJson(RECENT_KEY, []); showToast("История очищена"); })}
@@ -663,7 +664,7 @@ export default function App() {
         return <NotificationsScreen source={source} isOnline={isOnline} apiError={apiError} lastSync={lastSync} draftCount={drafts.length} favCount={favorites.length}
           onSync={() => { void sync(); }} onOffline={() => setView("offline")} onImport={() => setView("import")} onBack={closeView} />;
       case "scan":
-        return <ScanScreen recipes={recipes} onOpen={(r) => { setView(null); openRecipe(r); }} onBack={closeView} />;
+        return <SmartScanner recipes={recipes} drafts={drafts} initialMode="camera" onOpen={(r) => { setView(null); openRecipe(r); }} onSaveRecipe={saveDraft} onDelete={deleteDraft} onBack={closeView} />;
       case "calc":
         return <CalcScreen recipes={recipes} onOpen={(r) => openRecipe(r, "calculation")} onBack={closeView} />;
       case "qr":
@@ -671,7 +672,7 @@ export default function App() {
       case "offline":
         return <OfflineScreen recipes={recipes} source={source} isOnline={isOnline} onSync={sync} onBack={closeView} />;
       case "import":
-        return <ImportScreen drafts={drafts} onSave={saveDraft} onDelete={deleteDraft} onOpen={(r) => openRecipe(r)} onBack={closeView} />;
+        return <SmartScanner recipes={recipes} drafts={drafts} initialMode="photo" onOpen={(r) => { setView(null); openRecipe(r); }} onSaveRecipe={saveDraft} onDelete={deleteDraft} onBack={closeView} />;
     }
   };
 
