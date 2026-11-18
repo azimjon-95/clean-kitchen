@@ -10,6 +10,7 @@
 import type { DataSource, Recipe } from "../types";
 import { MOCK_RECIPES } from "../data/mockRecipes";
 import { cacheRecipes, getLastSync, loadCachedRecipes, type OfflineRecipe } from "./offline";
+import { fetchDelta, prefetchImagesInBackground, requestPersistence, storeDelta } from "./sync";
 
 export const API_URL: string = import.meta.env.VITE_API_URL || "http://localhost:4000";
 export const USE_MOCK: boolean = String(import.meta.env.VITE_USE_MOCK).toLowerCase() === "true";
@@ -70,20 +71,28 @@ export async function loadRecipes(): Promise<LoadResult> {
   if (USE_MOCK) return mockResult();
 
   try {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("Нет сети");
+    void requestPersistence();
+    // 1) delta-sync: с сервера приходит только новое/изменённое/убранное
+    try {
+      const delta = await fetchDelta(API_URL, mapApiRecipe, REQUEST_TIMEOUT_MS * 3);
+      const all = await storeDelta(delta);
+      if (all.length === 0) return mockResult("Серверда карточек нет");
+      prefetchImagesInBackground(all);
+      return { recipes: all, source: "server", lastSync: delta.serverTime };
+    } catch (e: any) {
+      if (e?.code !== 404) throw e; // старый сервер без /api/sync — обычная загрузка ниже
+    }
     const res = await fetchWithTimeout(`${API_URL}/api/recipes?limit=200`, REQUEST_TIMEOUT_MS);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const items: unknown = Array.isArray(data) ? data : data?.items;
-    if (!Array.isArray(items)) throw new Error("Noto'g'ri javob formati");
-
-    if (items.length === 0) {
-      // Server ishlayapti, lekin bazada karta yo'q — demo ko'rsatamiz
-      return mockResult("Serverda kartalar yo'q");
-    }
-
+    if (!Array.isArray(items)) throw new Error("Неверный формат ответа");
+    if (items.length === 0) return mockResult("Серверда карточек нет");
     const mapped = items.map(mapApiRecipe);
     const syncTime = new Date().toISOString();
     cacheRecipes(mapped as OfflineRecipe[]).catch(() => {});
+    prefetchImagesInBackground(mapped);
     return { recipes: mapped, source: "server", lastSync: syncTime };
   } catch (e) {
     const error = e instanceof Error ? (e.name === "AbortError" ? "Server javob bermadi (timeout)" : e.message) : "Ulanish xatosi";
@@ -97,4 +106,14 @@ export async function loadRecipes(): Promise<LoadResult> {
     }
     return mockResult(error);
   }
+}
+
+/** Мгновенный старт: карточки с устройства показываются до ответа сервера */
+export async function loadCachedFirst(): Promise<LoadResult | null> {
+  if (USE_MOCK) return null;
+  try {
+    const cached = await loadCachedRecipes();
+    if (!cached.length) return null;
+    return { recipes: cached as Recipe[], source: "cache", lastSync: await getLastSync() };
+  } catch { return null; }
 }

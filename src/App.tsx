@@ -7,13 +7,13 @@ import {
   LogoChef, TileCake, TileCloche, TileGrill, TileSaladBowl, TileSoup
 } from "./components/Icons";
 import { Banner } from "./components/Banner";
-import { RecipeImage } from "./components/RecipeImage";
+import { RecipeImage, StepImg } from "./components/RecipeImage";
 import {
   CalcScreen, NotificationsScreen, OfflineScreen, QrScreen, recipeLink
 } from "./screens/Tools";
 import { SmartScanner } from "./screens/Scanner";
 import { saveFavorites, loadFavorites, createConnectivityWatcher } from "./lib/offline";
-import { loadRecipes } from "./lib/api";
+import { loadCachedFirst, loadRecipes } from "./lib/api";
 import { startSpeech, type SpeechLang } from "./lib/speech";
 import { processVoiceQuery, scoreVoiceMatch } from "./lib/voiceCorrect";
 import { MOCK_RECIPES } from "./data/mockRecipes";
@@ -107,11 +107,20 @@ export default function App() {
 
   useEffect(() => {
     loadFavorites().then((ids) => ids.length && setFavorites(ids));
+    // сначала — карточки с устройства (мгновенно, даже без сети), затем обновление с сервера
+    loadCachedFirst().then((c) => { if (c) { setServerRecipes((cur) => (cur.length ? cur : c.recipes)); setSource((s) => (s === "loading" ? "cache" : s)); setLastSync(c.lastSync); } });
     sync();
-    return createConnectivityWatcher((online) => {
+    // при возврате в приложение (после паузы > 5 мин) — тихое обновление
+    let last = Date.now();
+    const onVis = () => {
+      if (document.visibilityState === "visible" && navigator.onLine && Date.now() - last > 5 * 60_000) { last = Date.now(); sync(); }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const stop = createConnectivityWatcher((online) => {
       setIsOnline(online);
       if (online) sync();
     });
+    return () => { document.removeEventListener("visibilitychange", onVis); stop(); };
   }, [sync]);
 
   const showToast = (t: string) => {
@@ -396,7 +405,7 @@ export default function App() {
                 <li key={n}>
                   <span className="step-n">{n + 1}</span>
                   <p>{s}</p>
-                  {r.stepImages?.[n] && <img className="step-img" src={r.stepImages[n]} alt={`Шаг ${n + 1}`} />}
+                  {r.stepImages?.[n] && <StepImg url={r.stepImages[n]} alt={`Шаг ${n + 1}`} />}
                   <button className="step-voice" onClick={() => speak(s)} aria-label="Прослушать шаг"><IconVolume size={18} /></button>
                 </li>
               ))}

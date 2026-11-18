@@ -12,7 +12,8 @@
     "typecheck": "tsc -b --pretty false",
     "prebuild": "node scripts/copy-ocr.mjs",
     "predev": "node scripts/copy-ocr.mjs",
-    "postinstall": "node scripts/copy-ocr.mjs"
+    "postinstall": "node scripts/copy-ocr.mjs",
+    "postbuild": "node scripts/offline-manifest.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

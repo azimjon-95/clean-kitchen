@@ -4,7 +4,8 @@ import {
   IconInfo, IconLink, IconRefresh, IconScan, IconSearch, IconShare, IconTrash, IconWifi, IconWifiOff
 } from "../components/Icons";
 import { RecipeImage } from "../components/RecipeImage";
-import { cacheRecipes, loadCachedRecipes, getLastSync } from "../lib/offline";
+import { clearAllOffline, loadCachedRecipes, getLastSync } from "../lib/offline";
+import { downloadAppPack, downloadImages, packStatus, requestPersistence, storageSummary } from "../lib/sync";
 import type { DataSource, Recipe } from "../types";
 
 const nf = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
@@ -306,30 +307,42 @@ export function OfflineScreen(p: {
   const [sync, setSync] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
-  const flash = (t: string) => { setToast(t); window.setTimeout(() => setToast(""), 1800); };
+  const [prog, setProg] = useState<{ pct: number; label: string } | null>(null);
+  const [st, setSt] = useState<Awaited<ReturnType<typeof storageSummary>> | null>(null);
+  const [pack, setPack] = useState<{ files: number; ocr: boolean }>({ files: 0, ocr: false });
+  const flash = (t: string) => { setToast(t); window.setTimeout(() => setToast(""), 2200); };
+  const mb = (b: number) => (b / 1048576).toFixed(b > 10485760 ? 0 : 1) + " МБ";
 
   const refresh = useCallback(async () => {
     try { setCached((await loadCachedRecipes()).length); } catch { setCached(0); }
     setSync(await getLastSync());
+    setSt(await storageSummary());
+    setPack(await packStatus());
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const save = async () => {
+  const downloadAll = async () => {
     setBusy(true);
     try {
-      await cacheRecipes(p.recipes as never);
-      flash(`Сохранено карт: ${p.recipes.length}`);
-    } catch { flash("Не удалось сохранить"); }
-    setBusy(false);
+      setProg({ pct: 0, label: "Карточки…" });
+      await p.onSync();                       // delta-sync: только новое с сервера
+      const list = (await loadCachedRecipes()) as unknown as Recipe[];
+      await requestPersistence();
+      await downloadImages(list, (d, t, l) => setProg({ pct: t ? (d / t) * 0.5 : 0.5, label: `${l}: ${d} из ${t}` }));
+      await downloadAppPack((d, t, l) => setProg({ pct: 0.5 + (t ? (d / t) * 0.5 : 0.5), label: `${l}: ${d} из ${t}` }));
+      flash("Готово: всё доступно без интернета");
+    } catch { flash("Не удалось скачать — проверьте соединение"); }
+    setProg(null); setBusy(false);
     void refresh();
   };
   const clear = async () => {
+    if (!confirm("Удалить карточки и фото с устройства? Они снова скачаются при наличии сети.")) return;
     setBusy(true);
-    try { await cacheRecipes([]); flash("Кэш очищен"); } catch { flash("Не удалось очистить"); }
+    try { await clearAllOffline(); flash("Данные на устройстве очищены"); } catch { flash("Не удалось очистить"); }
     setBusy(false);
     void refresh();
   };
-  const update = async () => { setBusy(true); await p.onSync(); setBusy(false); void refresh(); };
+  const update = async () => { setBusy(true); await p.onSync(); setBusy(false); void refresh(); flash("Обновлено с сервера"); };
 
   return (
     <Page title="Офлайн-режим" onBack={p.onBack}>
@@ -337,18 +350,25 @@ export function OfflineScreen(p: {
         <span className="note-ico">{p.isOnline ? <IconWifi size={24} /> : <IconWifiOff size={24} />}</span>
         <div>
           <b>{p.isOnline ? "Сеть доступна" : "Нет сети"}</b>
-          <p>{p.isOnline ? "Сохраните карты на устройство, чтобы они открывались без интернета." : "Приложение работает с картами, сохранёнными на устройстве."}</p>
+          <p>{p.isOnline ? "Скачайте карточки и фото на телефон — они откроются без интернета. Когда сеть появится, новое подгрузится само." : "Работаем с карточками и фото, сохранёнными на устройстве."}</p>
         </div>
       </div>
       <div className="stats">
-        <div><b>{cached ?? "—"}</b><span>карт в памяти устройства</span></div>
-        <div><b>{p.recipes.length}</b><span>карт сейчас загружено</span></div>
+        <div><b>{cached ?? "—"}</b><span>карточек на устройстве</span></div>
+        <div><b>{st ? st.images : "—"}</b><span>фото блюд{st ? ` · ${mb(st.imageBytes)}` : ""}</span></div>
       </div>
-      <p className="muted-line">Последняя синхронизация: {sync ? new Date(sync).toLocaleString("ru-RU") : "ещё не выполнялась"}</p>
-      <div className="actions-col">
-        <button className="btn-primary" onClick={save} disabled={busy}><IconCloudDown size={18} /> Сохранить все карты для офлайна</button>
+      <ul className="off-list">
+        <li className={pack.files ? "ok" : ""}>Приложение без сети: {pack.files ? `готово (${pack.files} файлов)` : "не скачано"}</li>
+        <li className={pack.ocr ? "ok" : ""}>Сканер документов без сети: {pack.ocr ? "модель распознавания скачана" : "модель не скачана"}</li>
+        <li className={st?.persisted ? "ok" : ""}>Защита от очистки браузером: {st?.persisted ? "включена" : "не подтверждена"}</li>
+        {st && st.quota > 0 && <li>Занято на устройстве: {mb(st.usage)} из {mb(st.quota)}</li>}
+      </ul>
+      <p className="muted-line">Последняя синхронизация: {sync ? new Date(sync).toLocaleString("ru-RU") : "ещё не выполнялась"}{p.source !== "server" ? " · данные сервера не загружены" : ""}</p>
+      {prog && <div className="processing small"><div className="bar"><i style={{ width: `${Math.round(prog.pct * 100)}%` }} /></div><small>{prog.label}</small></div>}
+      <div className="stack">
+        <button className="btn-primary" onClick={downloadAll} disabled={busy || !p.isOnline}><IconCloudDown size={18} /> Скачать всё для работы без интернета</button>
         <button className="btn-soft" onClick={update} disabled={busy || !p.isOnline}><IconRefresh size={18} /> Обновить с сервера</button>
-        <button className="btn-soft danger" onClick={clear} disabled={busy || !cached}><IconTrash size={18} /> Очистить сохранённые карты</button>
+        <button className="btn-soft danger" onClick={clear} disabled={busy || !cached}><IconTrash size={18} /> Очистить данные на устройстве</button>
       </div>
       {toast && <div className="toast">{toast}</div>}
     </Page>

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getStoredImage } from "../lib/offline";
 import type { Recipe } from "../types";
 
 export type ArtKind =
@@ -215,17 +216,41 @@ export function DishArt({ kind, className }: { kind: ArtKind; className?: string
 }
 
 /** Real foto; yuklanguncha yoki xato bo'lsa SVG illyustratsiya ko'rinadi */
+const urlCache = new Map<string, string>();
+
+/** Фото с устройства (если уже скачано) — иначе обычный адрес; без сети и без фото показывается иллюстрация */
+function useStoredSrc(url?: string): string | undefined {
+  const [src, setSrc] = useState<string | undefined>(url ? urlCache.get(url) ?? url : undefined);
+  useEffect(() => {
+    let alive = true;
+    if (!url) { setSrc(undefined); return; }
+    const hit = urlCache.get(url);
+    if (hit) { setSrc(hit); return; }
+    setSrc(navigator.onLine ? url : undefined);
+    void getStoredImage(url).then((b) => {
+      if (!b || !alive) return;
+      const o = URL.createObjectURL(b);
+      urlCache.set(url, o);
+      setSrc(o);
+    });
+    return () => { alive = false; };
+  }, [url]);
+  return src;
+}
+
 export function RecipeImage({ recipe, className = "" }: { recipe: Recipe; className?: string }) {
   const [state, setState] = useState<"loading" | "ok" | "fail">("loading");
+  const photo = useStoredSrc(recipe.imageUrl);
+  useEffect(() => setState("loading"), [photo]);
   const kind = artKind(recipe);
-  const showPhoto = !!recipe.imageUrl && state !== "fail";
+  const showPhoto = !!photo && state !== "fail";
   return (
     <div className={`rimg ${className}`}>
       <DishArt kind={kind} className="rimg-art" />
       {showPhoto && (
         <img
           className={state === "ok" ? "rimg-photo ok" : "rimg-photo"}
-          src={recipe.imageUrl}
+          src={photo}
           alt={recipe.name}
           loading="lazy"
           referrerPolicy="no-referrer"
@@ -235,4 +260,11 @@ export function RecipeImage({ recipe, className = "" }: { recipe: Recipe; classN
       )}
     </div>
   );
+}
+
+/** Фото шага: с устройства, если скачано */
+export function StepImg({ url, alt }: { url: string; alt: string }) {
+  const src = useStoredSrc(url);
+  if (!src) return null;
+  return <img className="step-img" src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" />;
 }

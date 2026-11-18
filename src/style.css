@@ -528,3 +528,8 @@ svg { display: block; flex: none; }
   .rv-grid { grid-template-columns: repeat(3, 1fr); } .rv-fields { grid-template-columns: 2fr 0.7fr repeat(4, 1fr); } .rv-fields > .rv-cell:first-child { grid-column: auto; }
   .doc-cam { aspect-ratio: 4 / 3; max-height: 72vh; }
 }
+
+.off-list { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 6px; font-size: 14px; color: var(--ink-2); }
+.off-list li { padding: 9px 12px; border-radius: 12px; background: #f6f7f9; }
+.off-list li.ok { background: #e8f7ee; color: #1f7a48; }
+.processing.small { padding: 10px 0; gap: 6px; }
