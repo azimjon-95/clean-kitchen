@@ -7,3 +7,5 @@ dist
 ios
 android
 public/tesseract/
+
+/backend/node_modules
