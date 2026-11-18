@@ -533,3 +533,11 @@ svg { display: block; flex: none; }
 .off-list li { padding: 9px 12px; border-radius: 12px; background: #f6f7f9; }
 .off-list li.ok { background: #e8f7ee; color: #1f7a48; }
 .processing.small { padding: 10px 0; gap: 6px; }
+
+/* голосовой поиск: живой уровень и подтверждение */
+.wave.live i { animation: none; height: calc(var(--h) * var(--lvl, 0.3)); transition: height 0.08s linear; opacity: 1; }
+.voice-choices { display: grid; gap: 8px; width: 100%; max-width: 360px; margin: 8px 0 4px; text-align: center; }
+.voice-choices small { color: var(--ink-2); font-size: 14px; }
+.voice-choices button { padding: 13px 16px; border-radius: 16px; background: #fff; border: 1.5px solid #f2c7a6; font-weight: 700; font-size: 16px; color: var(--ink); }
+.voice-choices button:active { background: var(--orange-soft); }
+.voice-choices .more { border-color: transparent; background: #f1f2f5; color: var(--ink-2); font-weight: 600; }

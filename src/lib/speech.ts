@@ -12,7 +12,8 @@ export type SpeechLang = "ru-RU" | "uz-UZ";
 
 export type SpeechCallbacks = {
   onInterim?: (text: string) => void;
-  onFinal?: (text: string) => void;
+  /** text — лучший вариант; alternatives — все варианты распознавания (n-best) */
+  onFinal?: (text: string, alternatives?: string[]) => void;
   onError?: (message: string) => void;
   onEnd?: () => void;
 };
@@ -67,13 +68,13 @@ export async function startSpeech(lang: SpeechLang, cb: SpeechCallbacks): Promis
 
       const result = await native.addListener("result", (data: any) => {
         const text = (data?.matches?.[0] || "").trim();
-        if (text) cb.onFinal?.(text);
+        if (text) cb.onFinal?.(text, (data?.matches || []).map((m: string) => String(m).trim()).filter(Boolean));
       });
       listeners.push(result);
 
       await native.start({
         language: lang,
-        maxResults: 3,
+        maxResults: 5,
         partialResults: true,
         popup: false
       });
@@ -100,18 +101,21 @@ export async function startSpeech(lang: SpeechLang, cb: SpeechCallbacks): Promis
   recognition.lang = lang;
   recognition.continuous = false;
   recognition.interimResults = true;
-  recognition.maxAlternatives = 3;
+  recognition.maxAlternatives = 5;
 
   recognition.onresult = (event: any) => {
     let interim = "";
     let finalText = "";
+    let alts: string[] = [];
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const res = event.results[i];
-      if (res.isFinal) finalText += res[0].transcript;
-      else interim += res[0].transcript;
+      if (res.isFinal) {
+        finalText += res[0].transcript;
+        alts = Array.from({ length: res.length }, (_, k) => String(res[k].transcript).trim()).filter(Boolean);
+      } else interim += res[0].transcript;
     }
     if (interim) cb.onInterim?.(interim);
-    if (finalText.trim()) cb.onFinal?.(finalText.trim());
+    if (finalText.trim()) cb.onFinal?.(finalText.trim(), alts);
   };
 
   recognition.onerror = (event: any) => {

@@ -8,3 +8,4 @@ ios
 android
 public/tesseract/
 
+tests/.build

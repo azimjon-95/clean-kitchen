@@ -16,6 +16,9 @@ import { saveFavorites, loadFavorites, createConnectivityWatcher } from "./lib/o
 import { loadCachedFirst, loadRecipes } from "./lib/api";
 import { startSpeech, type SpeechLang } from "./lib/speech";
 import { processVoiceQuery, scoreVoiceMatch } from "./lib/voiceCorrect";
+import { VoiceRecorder } from "./voice/capture";
+import { serverSttEnabled, transcribeOnServer } from "./voice/stt";
+import { buildIndex, resolveVoice } from "./voice/match";
 import { MOCK_RECIPES } from "./data/mockRecipes";
 import type { DataSource, Ingredient, Recipe } from "./types";
 
@@ -90,6 +93,13 @@ export default function App() {
   const [voiceLang, setVoiceLang] = useState<SpeechLang>("ru-RU");
   const [voicePreview, setVoicePreview] = useState("");
   const [voiceMsg, setVoiceMsg] = useState("");
+  const [voicePhase, setVoicePhase] = useState<"idle" | "listening" | "processing">("idle");
+  const [voiceChoices, setVoiceChoices] = useState<{ id: string; name: string }[]>([]);
+  const [voiceQ, setVoiceQ] = useState("");
+  const waveRef = useRef<HTMLDivElement>(null);
+  const recRef = useRef<VoiceRecorder | null>(null);
+  const runIdRef = useRef(0);
+  const finishRef = useRef<null | (() => void)>(null);
   const stopRef = useRef<null | (() => void)>(null);
 
   const recipes = useMemo(() => [...drafts, ...serverRecipes], [drafts, serverRecipes]);
@@ -193,48 +203,119 @@ export default function App() {
   };
 
   /* ───────── Голосовой поиск ───────── */
+  /** Отмена: закрытие экрана / новый запрос — запись выбрасывается */
   const stopListening = useCallback(() => {
+    runIdRef.current++;
+    recRef.current?.cancel(); recRef.current = null;
+    finishRef.current = null;
     stopRef.current?.();
     stopRef.current = null;
-    setListening(false);
+    setListening(false); setVoicePhase("idle");
   }, []);
+  /** Нажатие на микрофон во время записи: закончить фразу и распознать */
+  const finishListening = () => { if (finishRef.current) finishRef.current(); else stopListening(); };
 
-  const handleVoiceText = useCallback((text: string) => {
-    const { corrected, matches } = processVoiceQuery(text, recipesRef.current, 45);
-    const q = corrected || text;
-    const top = matches[0];
-    const second = matches[1];
-    if (top && top.score >= 80 && (!second || top.score - second.score >= 15)) {
-      stopListening();
-      setVoiceOpen(false);
-      setView(null);
-      setQuery("");
-      openRecipe(top.recipe);
-    } else if (matches.length > 0) {
-      stopListening();
-      setVoiceOpen(false);
-      setGroup("all"); setDepartment(""); setSection("");
-      setQuery(q);
-      setSelected(null);
-      setView(null);
-      setTab("search");
-    } else {
-      setVoiceMsg(`«${q}» не найдено. Скажите ещё раз.`);
+  /** Показ результатов поиска по произнесённому тексту */
+  const showSearch = useCallback((q: string) => {
+    stopListening();
+    setVoiceOpen(false);
+    setGroup("all"); setDepartment(""); setSection("");
+    setQuery(q); setSelected(null); setView(null); setTab("search");
+  }, [stopListening]);
+
+  /** Решение по всем вариантам распознавания: открыть / уточнить / показать список / не найдено */
+  const handleVoiceAlternatives = useCallback((alts: string[]) => {
+    const list = recipesRef.current;
+    const index = buildIndex(list);
+    const d = resolveVoice(alts, index);
+    const text = alts[0] ?? "";
+    setVoicePreview(text); setVoiceQ(text);
+    if (d.kind === "open") {
+      const r = list.find((x) => x.id === d.best.id);
+      if (r) { stopListening(); setVoiceOpen(false); setView(null); setQuery(""); openRecipe(r); return; }
     }
-  }, [openRecipe, stopListening]);
+    if (d.kind === "choose") {
+      setVoiceChoices(d.list.slice(0, 4).map((c) => ({ id: c.id, name: list.find((x) => x.id === c.id)?.name ?? "" })).filter((c) => c.name));
+      setVoiceMsg("Вы имели в виду:");
+      return;
+    }
+    // слова общего поиска («супы», «с курицей») — прежний умный поиск
+    const { corrected, matches } = processVoiceQuery(text, list, 45);
+    if (matches.length > 0) { showSearch(corrected || text); return; }
+    setVoiceMsg(`«${text}» не найдено. Скажите название блюда ещё раз.`);
+  }, [openRecipe, stopListening, showSearch]);
+
+  const setLevel = (db: number) => {
+    const lvl = Math.max(0.18, Math.min(1, (db + 62) / 40));
+    waveRef.current?.style.setProperty("--lvl", String(lvl));
+  };
 
   const startListening = useCallback(async () => {
-    setVoiceMsg("");
-    setVoicePreview("");
-    setListening(true);
+    const run = ++runIdRef.current;
+    const alive = () => run === runIdRef.current;
+    setVoiceMsg(""); setVoicePreview(""); setVoiceChoices([]); setVoiceQ("");
+    setListening(true); setVoicePhase("listening");
+
+    const lowMsg = (reason?: string) =>
+      reason === "too-short" ? "Слишком коротко. Назовите блюдо целиком."
+      : "Не слышу вас. Говорите ближе к телефону — далёкие голоса и шум игнорируются.";
+
+    // 1) Серверное распознавание (точнее всего, работает и в Telegram/WebView): запись ближней речи
+    if (VoiceRecorder.supported() && (await serverSttEnabled())) {
+      const rec = new VoiceRecorder();
+      recRef.current = rec;
+      const finish = async () => {
+        if (!alive()) return;
+        setListening(false); setVoicePhase("processing"); setVoiceMsg("Распознаю…");
+        const res = await rec.stop();
+        recRef.current = null;
+        if (!alive()) return;
+        if (!res.wav) { setVoicePhase("idle"); setVoiceMsg(lowMsg(res.analysis.reason)); return; }
+        try {
+          const out = await transcribeOnServer(res.wav, voiceLang);
+          if (!alive()) return;
+          setVoicePhase("idle");
+          if (!out.alternatives.length) { setVoiceMsg("Речь не распознана. Повторите, пожалуйста."); return; }
+          handleVoiceAlternatives(out.alternatives);
+        } catch {
+          if (!alive()) return;
+          setVoicePhase("idle"); setVoiceMsg("Нет связи с сервером распознавания. Попробуйте ещё раз.");
+        }
+      };
+      finishRef.current = () => { void finish(); };
+      try {
+        await rec.start((db, st) => { setLevel(db); if (st === "speech") setVoiceMsg("Слышу…"); }, () => { void finish(); });
+        return;
+      } catch {
+        recRef.current = null; finishRef.current = null;
+        if (!alive()) return;
+        // микрофон недоступен для записи — пробуем системное распознавание ниже
+      }
+    }
+
+    // 2) Системное распознавание (Web Speech / Capacitor) с n-best; на не-iOS параллельно слушаем «ближнее поле»
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    let gate: VoiceRecorder | null = null;
+    if (!isIOS && VoiceRecorder.supported()) {
+      gate = new VoiceRecorder();
+      try { await gate.start((db) => setLevel(db), () => undefined, 12000); } catch { gate = null; }
+    }
     const stop = await startSpeech(voiceLang, {
-      onInterim: (t) => setVoicePreview(t),
-      onFinal: (t) => { setVoicePreview(t); handleVoiceText(t); },
-      onError: (msg) => { setVoiceMsg(msg); setListening(false); },
-      onEnd: () => { setListening(false); stopRef.current = null; }
+      onInterim: (t) => alive() && setVoicePreview(t),
+      onFinal: async (t, alts) => {
+        if (!alive()) return;
+        if (gate) {
+          const g = await gate.stop(); gate = null;
+          if (!g.analysis.ok) { setVoiceMsg(lowMsg(g.analysis.reason)); setVoicePreview(""); setListening(false); setVoicePhase("idle"); return; }
+        }
+        setVoicePreview(t); setVoicePhase("idle");
+        handleVoiceAlternatives(alts && alts.length ? alts : [t]);
+      },
+      onError: (msg) => { if (!alive()) return; gate?.cancel(); gate = null; setVoiceMsg(msg); setListening(false); setVoicePhase("idle"); },
+      onEnd: () => { if (!alive()) return; gate?.cancel(); gate = null; setListening(false); setVoicePhase((p) => (p === "processing" ? p : "idle")); stopRef.current = null; }
     });
     stopRef.current = stop;
-  }, [voiceLang, handleVoiceText]);
+  }, [voiceLang, handleVoiceAlternatives]);
 
   /** Нажатие на микрофон сразу открывает экран прослушивания и запускает запись */
   const openVoice = () => {
@@ -638,19 +719,28 @@ export default function App() {
       <div className="orb-wrap">
         <span className={listening ? "ring r1 on" : "ring r1"} />
         <span className={listening ? "ring r2 on" : "ring r2"} />
-        <button className={listening ? "orb on" : "orb"} onClick={() => (listening ? stopListening() : void startListening())} aria-label="Микрофон"><IconMic size={52} filled /></button>
+        <button className={listening ? "orb on" : "orb"} onClick={() => (listening ? finishListening() : void startListening())} aria-label="Микрофон"><IconMic size={52} filled /></button>
       </div>
-      <div className={listening ? "wave on" : "wave"} aria-hidden="true">
+      <div ref={waveRef} className={listening ? "wave on live" : "wave"} aria-hidden="true">
         {Array.from({ length: 21 }).map((_, i) => (
           <i key={i} style={{ ["--h" as string]: `${[10, 16, 26, 18, 34, 22, 44, 28, 52, 30, 58, 30, 52, 28, 44, 22, 34, 18, 26, 16, 10][i]}px`, animationDelay: `${(i % 7) * 70}ms` }} />
         ))}
       </div>
-      <h3>{listening ? "Слушаю…" : "Нажмите на микрофон"}</h3>
+      <h3>{voicePhase === "processing" ? "Распознаю…" : listening ? "Слушаю…" : "Нажмите на микрофон"}</h3>
       <p className="voice-status" aria-live="polite">{voicePreview || voiceMsg}</p>
+      {voiceChoices.length > 0 && (
+        <div className="voice-choices">
+          <small>{voicePreview ? `Вы сказали «${voicePreview}». Вы имели в виду:` : "Вы имели в виду:"}</small>
+          {voiceChoices.map((c) => (
+            <button key={c.id} onClick={() => { const r = recipes.find((x) => x.id === c.id); if (r) { stopListening(); setVoiceOpen(false); setView(null); setQuery(""); openRecipe(r); } }}>{c.name}</button>
+          ))}
+          <button className="more" onClick={() => showSearch(voiceQ)}>Показать все результаты</button>
+        </div>
+      )}
       <div className="examples">
         <span>Например:</span>
         {VOICE_EXAMPLES.map((ex) => (
-          <button key={ex} onClick={() => { stopListening(); setVoicePreview(ex); handleVoiceText(ex); }}>«{ex}»</button>
+          <button key={ex} onClick={() => { stopListening(); setVoicePreview(ex); handleVoiceAlternatives([ex]); }}>«{ex}»</button>
         ))}
       </div>
       <label className="lang-pill">

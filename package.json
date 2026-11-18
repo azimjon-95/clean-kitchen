@@ -13,7 +13,8 @@
     "prebuild": "node scripts/copy-ocr.mjs",
     "predev": "node scripts/copy-ocr.mjs",
     "postinstall": "node scripts/copy-ocr.mjs",
-    "postbuild": "node scripts/offline-manifest.mjs"
+    "postbuild": "node scripts/offline-manifest.mjs",
+    "test:voice": "node scripts/test-voice.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
