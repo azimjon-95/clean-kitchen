@@ -20,10 +20,13 @@ import { VoiceRecorder } from "./voice/capture";
 import { serverSttEnabled, transcribeOnServer } from "./voice/stt";
 import { buildIndex, resolveVoice } from "./voice/match";
 import { MOCK_RECIPES } from "./data/mockRecipes";
+import { can, hasFeature, canManage, type Me } from "./auth/client";
+import { loadTenantRecipes, loadTenantCached, pushImport } from "./auth/recipes";
+import { Manage } from "./platform/Manage";
 import type { DataSource, Ingredient, Recipe } from "./types";
 
 type Tab = "home" | "search" | "saved" | "categories" | "menu";
-type View = null | "notifications" | "scan" | "calc" | "import" | "qr" | "offline";
+type View = null | "notifications" | "scan" | "calc" | "import" | "qr" | "offline" | "manage";
 type DetailTab = "ingredients" | "technology" | "calculation";
 
 const KITCHEN_DEPTS = [
@@ -65,7 +68,12 @@ function writeJson(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* приватный режим */ }
 }
 
-export default function App() {
+export default function App({ me = null, onLogout, onReloadMe }: { me?: Me | null; onLogout?: () => void; onReloadMe?: () => void }) {
+  /** Возможности строятся из серверных permissions; без входа (демо) доступно всё, как раньше */
+  const authed = !!me;
+  const feat = (f: string) => !authed || hasFeature(me, f);
+  const canCost = !authed || (!me!.flags.denyCost && can(me, "calculations", "view"));
+  const canImport = !authed || can(me, "imports", "import");
   const [serverRecipes, setServerRecipes] = useState<Recipe[]>([]);
   const [drafts, setDrafts] = useState<Recipe[]>(() => readJson<Recipe[]>(DRAFTS_KEY, []));
   const [source, setSource] = useState<DataSource>("loading");
@@ -108,17 +116,17 @@ export default function App() {
 
   /* ───────── Данные ───────── */
   const sync = useCallback(async () => {
-    const r = await loadRecipes();
+    const r = me ? await loadTenantRecipes(me) : await loadRecipes();
     setServerRecipes(r.recipes);
     setSource(r.source);
     setApiError(r.error);
     setLastSync(r.lastSync);
-  }, []);
+  }, [me]);
 
   useEffect(() => {
     loadFavorites().then((ids) => ids.length && setFavorites(ids));
     // сначала — карточки с устройства (мгновенно, даже без сети), затем обновление с сервера
-    loadCachedFirst().then((c) => { if (c) { setServerRecipes((cur) => (cur.length ? cur : c.recipes)); setSource((s) => (s === "loading" ? "cache" : s)); setLastSync(c.lastSync); } });
+    (me ? loadTenantCached() : loadCachedFirst()).then((c) => { if (c) { setServerRecipes((cur) => (cur.length ? cur : c.recipes)); setSource((s) => (s === "loading" ? "cache" : s)); setLastSync(c.lastSync); } });
     sync();
     // при возврате в приложение (после паузы > 5 мин) — тихое обновление
     let last = Date.now();
@@ -319,6 +327,7 @@ export default function App() {
 
   /** Нажатие на микрофон сразу открывает экран прослушивания и запускает запись */
   const openVoice = () => {
+    if (!feat("voice")) return showToast("Голосовой поиск вам недоступен");
     setVoiceOpen(true);
     void startListening();
   };
@@ -353,6 +362,7 @@ export default function App() {
   const saveDraft = (d: Recipe) => {
     setDrafts((old) => { const next = [d, ...old]; writeJson(DRAFTS_KEY, next); return next; });
     showToast("Карточка сохранена");
+    if (authed && can(me, "imports", "import")) pushImport(d).then((r) => { if (r.created) { showToast("Черновик отправлен на сервер"); void sync(); } }).catch(() => {});
   };
   const deleteDraft = (id: string) =>
     setDrafts((old) => { const next = old.filter((d) => d.id !== id); writeJson(DRAFTS_KEY, next); return next; });
@@ -377,9 +387,9 @@ export default function App() {
           enterKeyHint="search"
         />
         {query && <button className="clear" onClick={() => setQuery("")} aria-label="Очистить"><IconClose size={16} /></button>}
-        <button className="mic-btn" onClick={openVoice} aria-label="Голосовой поиск"><IconMic size={22} /></button>
+        {feat("voice") && <button className="mic-btn" onClick={openVoice} aria-label="Голосовой поиск"><IconMic size={22} /></button>}
       </div>
-      {withScan && <button className="scan-btn" onClick={() => setView("scan")} aria-label="Сканер документов и QR-кода"><IconScan size={26} /></button>}
+      {withScan && canImport && <button className="scan-btn" onClick={() => setView("scan")} aria-label="Сканер документов и QR-кода"><IconScan size={26} /></button>}
     </div>
   );
 
@@ -431,11 +441,11 @@ export default function App() {
             <button className="round-btn" onClick={() => setMoreOpen((v) => !v)} aria-label="Ещё"><IconMore size={21} /></button>
             {moreOpen && (
               <div className="popover" role="menu">
-                <button onClick={() => { speak(`${r.name}. ${r.ingredients.map((i) => `${i.name} ${formatQty(i, factor)}`).join(". ")}`); setMoreOpen(false); }}>
+                {feat("tts") && <button onClick={() => { speak(`${r.name}. ${r.ingredients.map((i) => `${i.name} ${formatQty(i, factor)}`).join(". ")}`); setMoreOpen(false); }}>
                   <IconVolume size={18} /> Прослушать состав
-                </button>
+                </button>}
                 <button onClick={() => copyLink(r)}><IconLink size={18} /> Копировать ссылку</button>
-                <button onClick={() => { setMoreOpen(false); setSelected(null); setView("qr"); }}><IconQr size={18} /> QR-код карты</button>
+                {feat("qr") && <button onClick={() => { setMoreOpen(false); setSelected(null); setView("qr"); }}><IconQr size={18} /> QR-код карты</button>}
               </div>
             )}
           </div>
@@ -461,7 +471,7 @@ export default function App() {
           {r.description && <p className="desc">{r.description}</p>}
 
           <div className="seg" role="tablist">
-            {([["ingredients", "Ингредиенты"], ["technology", "Технология"], ["calculation", "Калькуляция"]] as [DetailTab, string][]).map(([k, l]) => (
+            {([["ingredients", "Ингредиенты"], ["technology", "Технология"], ["calculation", "Калькуляция"]] as [DetailTab, string][]).filter(([k]) => k !== "calculation" || canCost).map(([k, l]) => (
               <button key={k} role="tab" aria-selected={detailTab === k} className={detailTab === k ? "on" : ""} onClick={() => setDetailTab(k)}>{l}</button>
             ))}
           </div>
@@ -487,7 +497,7 @@ export default function App() {
                   <span className="step-n">{n + 1}</span>
                   <p>{s}</p>
                   {r.stepImages?.[n] && <StepImg url={r.stepImages[n]} alt={`Шаг ${n + 1}`} />}
-                  <button className="step-voice" onClick={() => speak(s)} aria-label="Прослушать шаг"><IconVolume size={18} /></button>
+                  {feat("tts") && <button className="step-voice" onClick={() => speak(s)} aria-label="Прослушать шаг"><IconVolume size={18} /></button>}
                 </li>
               ))}
             </ol>
@@ -536,9 +546,9 @@ export default function App() {
         {!q && (
           <Banner slides={[
             { src: "banners/hero-recipes.webp", alt: "Технологические карты блюд — открыть все блюда", onClick: () => goSearch() },
-            { src: "banners/hero-cost.webp", alt: "Точная стоимость каждого блюда — открыть калькуляцию", onClick: () => setView("calc") },
-            { src: "banners/hero-import.webp", alt: "Импорт рецептов из PDF и фото", onClick: () => setView("import") },
-            { src: "banners/hero-voice.webp", alt: "Голосовой поиск рецептов", onClick: openVoice }
+            ...(canCost ? [{ src: "banners/hero-cost.webp", alt: "Точная стоимость каждого блюда — открыть калькуляцию", onClick: () => setView("calc") }] : []),
+            ...(canImport ? [{ src: "banners/hero-import.webp", alt: "Импорт рецептов из PDF и фото", onClick: () => setView("import") }] : []),
+            ...(feat("voice") ? [{ src: "banners/hero-voice.webp", alt: "Голосовой поиск рецептов", onClick: openVoice }] : [])
           ]} />
         )}
 
@@ -682,16 +692,20 @@ export default function App() {
     <>
       <h1 className="page-title">Меню</h1>
       <div className="profile">
-        <span className="avatar">П</span>
-        <div><b>Повар</b><small>Рабочий профиль</small></div>
+        <span className="avatar">{(me?.user.name || "П").slice(0, 1).toUpperCase()}</span>
+        <div><b>{me?.user.name || "Повар"}</b><small>{me ? `${me.role?.name ?? ""} · ${me.restaurant?.name ?? ""}` : "Демо без входа"}</small></div>
       </div>
+      {me?.tenantError && <div className="form-err" role="alert">{me.tenantError.message}</div>}
+      {me && canManage(me) && !me.tenantError && (
+        <div className="menu-list" style={{ marginTop: 14 }}>{menuItem(<IconLayers size={20} />, "Управление", "Карты, сотрудники, роли, журнал", () => setView("manage"))}</div>
+      )}
 
       <h3 className="menu-h">Инструменты</h3>
       <div className="menu-list">
-        {menuItem(<IconCalc size={20} />, "Калькуляция", "Себестоимость блюд и порций", () => setView("calc"))}
-        {menuItem(<IconImport size={20} />, "Импорт PDF / Фото", `Фото и PDF → карточка · импортировано: ${drafts.length}`, () => setView("import"))}
-        {menuItem(<IconQr size={20} />, "QR-код карты", "Создать код для карты", () => setView("qr"))}
-        {menuItem(<IconScan size={20} />, "Сканер документов", "Камера, фото, PDF и QR-код", () => setView("scan"))}
+        {canCost && menuItem(<IconCalc size={20} />, "Калькуляция", "Себестоимость блюд и порций", () => setView("calc"))}
+        {canImport && menuItem(<IconImport size={20} />, "Импорт PDF / Фото", `Фото и PDF → карточка · импортировано: ${drafts.length}`, () => setView("import"))}
+        {feat("qr") && menuItem(<IconQr size={20} />, "QR-код карты", "Создать код для карты", () => setView("qr"))}
+        {canImport && menuItem(<IconScan size={20} />, "Сканер документов", "Камера, фото, PDF и QR-код", () => setView("scan"))}
         {menuItem(<IconCloudDown size={20} />, "Офлайн-режим", "Карты на устройстве без интернета", () => setView("offline"))}
         {menuItem(<IconBell size={20} />, "Уведомления", needsAttention ? "Есть важные сообщения" : "Всё в порядке", () => setView("notifications"))}
         {menuItem(<IconHistory size={20} />, "Очистить историю", "Список недавно открытых", () => { setRecent([]); writeJson(RECENT_KEY, []); showToast("История очищена"); })}
@@ -707,7 +721,8 @@ export default function App() {
           <button className="btn-soft" onClick={() => sync()}><IconRefresh size={16} /> {source === "mock" ? "Подключиться" : "Обновить"}</button>
         )}
       </div>
-      <p className="version">CLEAN KITCHEN · V12</p>
+      {me && <button className="btn-soft wide" style={{ marginTop: 18 }} onClick={() => onLogout?.()}>Выйти из аккаунта</button>}
+      <p className="version">CLEAN KITCHEN · V13</p>
     </>
   );
 
@@ -770,6 +785,8 @@ export default function App() {
         return <QrScreen recipes={recipes} onScan={() => setView("scan")} onBack={closeView} />;
       case "offline":
         return <OfflineScreen recipes={recipes} source={source} isOnline={isOnline} onSync={sync} onBack={closeView} />;
+      case "manage":
+        return me ? <Manage me={me} onBack={closeView} onChanged={() => { void sync(); }} /> : null;
       case "import":
         return <SmartScanner recipes={recipes} drafts={drafts} initialMode="photo" onOpen={(r) => { setView(null); openRecipe(r); }} onSaveRecipe={saveDraft} onDelete={deleteDraft} onBack={closeView} />;
     }
