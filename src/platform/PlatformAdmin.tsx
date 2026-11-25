@@ -60,7 +60,7 @@ function CreateRestaurant({ onClose, onDone }: { onClose: () => void; onDone: ()
       <div className="mg-two"><Field label="Валюта"><input value={f.currency} maxLength={3} onChange={set("currency")} /></Field><Field label="Часовой пояс"><input value={f.timezone} onChange={set("timezone")} /></Field></div>
       <h3 className="menu-h">Владелец</h3>
       <Field label="Имя"><input value={f.ownerName} onChange={set("ownerName")} /></Field>
-      <Field label="Email"><input type="email" value={f.ownerEmail} onChange={set("ownerEmail")} /></Field>
+      <Field label="Логин / Email"><input type="text" autoCapitalize="none" value={f.ownerEmail} onChange={set("ownerEmail")} /></Field>
       <Field label="Временный пароль" hint="Минимум 10 символов, буквы и цифры"><input type="password" autoComplete="new-password" value={f.ownerPassword} onChange={set("ownerPassword")} /></Field>
       <Err msg={err} />
       <button className="btn-primary wide" disabled={busy} onClick={submit}>{busy ? "Создаём…" : "Создать"}</button>
@@ -84,7 +84,7 @@ function RestaurantSheet({ r, onClose, onChanged }: { r: R; onClose: () => void;
         <button className="btn-soft" onClick={() => setOwner(!owner)}>Сменить владельца</button>
         <button className="btn-soft" onClick={view}>Просмотр данных</button>
       </div>
-      {owner && <div className="mg-box"><Field label="Имя"><input value={oe.name} onChange={(e) => setOe({ ...oe, name: e.target.value })} /></Field><Field label="Email"><input type="email" value={oe.email} onChange={(e) => setOe({ ...oe, email: e.target.value })} /></Field><Field label="Пароль"><input type="password" value={oe.password} onChange={(e) => setOe({ ...oe, password: e.target.value })} /></Field><button className="btn-primary wide" onClick={changeOwner}>Назначить владельцем</button></div>}
+      {owner && <div className="mg-box"><Field label="Имя"><input value={oe.name} onChange={(e) => setOe({ ...oe, name: e.target.value })} /></Field><Field label="Логин / Email"><input type="text" autoCapitalize="none" value={oe.email} onChange={(e) => setOe({ ...oe, email: e.target.value })} /></Field><Field label="Пароль"><input type="password" value={oe.password} onChange={(e) => setOe({ ...oe, password: e.target.value })} /></Field><button className="btn-primary wide" onClick={changeOwner}>Назначить владельцем</button></div>}
       {support && <div className="mg-box"><small>Контролируемый просмотр (read-only, действие записано в журнал)</small>{support.map((s) => <div key={s.id} className="mg-line"><span>{s.name}</span><Badge>{s.status}</Badge></div>)}{!support.length && <Empty text="Карточек нет" />}</div>}
       <Err msg={err} />
       {confirm && <Confirm text="Архивировать ресторан? Сотрудники потеряют доступ, данные сохранятся." onNo={() => setConfirm(null)} onYes={() => setStatus("archived")} />}

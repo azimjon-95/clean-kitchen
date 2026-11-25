@@ -19,8 +19,8 @@ export function LoginScreen() {
         <div className="login-logo"><LogoChef size={46} /></div>
         <h1>Clean Kitchen</h1>
         <p className="login-sub">Войдите в рабочее пространство вашего ресторана</p>
-        <label className="fld"><span>Email</span>
-          <input type="email" autoComplete="username" inputMode="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@restaurant.com" /></label>
+        <label className="fld"><span>Логин или Email</span>
+          <input type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="логин или name@restaurant.com" /></label>
         <label className="fld"><span>Пароль</span>
           <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         {err && <div className="form-err" role="alert">{err}</div>}

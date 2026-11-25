@@ -189,7 +189,7 @@ function MemberForm({ m, roles, cats, onClose, onDone }: { m: any | null; roles:
   };
   return (<Sheet title={m ? `Права: ${m.name}` : "Новый сотрудник"} onClose={onClose}>
     {!m && <><Field label="Имя"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-      <Field label="Email"><input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
+      <Field label="Логин / Email"><input type="text" autoCapitalize="none" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
       <Field label="Пароль" hint="Минимум 10 символов, буквы и цифры"><input type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field></>}
     <Field label="Роль"><select value={f.roleId} onChange={(e) => setF({ ...f, roleId: e.target.value })}><option value="">— выберите —</option>{assignable.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></Field>
     <h3 className="menu-h">Доступ к категориям</h3><div className="mg-checks">{cats.map((c) => <label key={c.id}><input type="checkbox" checked={f.categoryIds.includes(c.id)} onChange={() => tog("categoryIds", c.id)} />{c.name}</label>)}{!cats.length && <small>Категорий нет</small>}</div>
