@@ -12,7 +12,9 @@ import { MOCK_RECIPES } from "../data/mockRecipes";
 import { cacheRecipes, getLastSync, loadCachedRecipes, type OfflineRecipe } from "./offline";
 import { fetchDelta, prefetchImagesInBackground, requestPersistence, storeDelta } from "./sync";
 
-export const API_URL: string = import.meta.env.VITE_API_URL || "http://localhost:4000";
+// Пустая строка = тот же домен (продакшен на VPS: сайт и /api за одним Caddy). Не задано в dev → локальный backend.
+const ENV_API = import.meta.env.VITE_API_URL as string | undefined;
+export const API_URL: string = (ENV_API !== undefined ? ENV_API : import.meta.env.DEV ? "http://localhost:4000" : "").replace(/\/$/, "");
 export const USE_MOCK: boolean = String(import.meta.env.VITE_USE_MOCK).toLowerCase() === "true";
 const REQUEST_TIMEOUT_MS = 5000;
 

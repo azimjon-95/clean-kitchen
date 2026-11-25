@@ -431,8 +431,12 @@ export default function App({ me = null, onLogout, onReloadMe }: { me?: Me | nul
     const base = Math.max(1, r.portionCount || 1);
     const factor = portions / base;
     const cost = r.cost;
+    // Защита техкарты: водяной знак с именем сотрудника и запрет копирования текста (если нет права экспорта)
+    const guarded = authed && !can(me, "recipes", "export");
+    const mark = me ? `${me.user.email} · ${new Date().toLocaleDateString("ru-RU")}` : "";
     return (
-      <div className="detail">
+      <div className={guarded ? "detail guarded" : "detail"} onCopy={guarded ? (e) => e.preventDefault() : undefined} onContextMenu={guarded ? (e) => e.preventDefault() : undefined}>
+        {authed && <div className="watermark" aria-hidden="true">{Array.from({ length: 18 }, (_, i) => <span key={i}>{mark}</span>)}</div>}
         <div className="hero">
           <RecipeImage recipe={r} className="hero-img" />
           <div className="hero-shade" />

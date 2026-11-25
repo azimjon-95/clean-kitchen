@@ -16,7 +16,7 @@ export const ABS_MIN_DB = -50;       // и не тише -50 dBFS (иначе «
 export const NEAR_MARGIN_DB = 9;     // сегменты тише лучшего больше чем на 9 дБ — далёкие голоса
 export const MIN_SPEECH_MS = 260;
 export const HANG_MS = 280;          // пауза внутри фразы, которую не считаем концом
-export const END_SILENCE_MS = 850;   // тишина после речи → конец фразы
+export const END_SILENCE_MS = 600;   // тишина после речи → конец фразы (быстрый ответ; паузы внутри фразы покрывает HANG_MS)
 export const PAD_MS = 160;
 
 export type Segment = { start: number; end: number; meanDb: number; peakDb: number }; // индексы кадров

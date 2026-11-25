@@ -4,6 +4,7 @@
  *  2) системное распознавание (Web Speech / Capacitor) с несколькими вариантами (n-best);
  */
 import { API_URL } from "../lib/api";
+import { authHeader, refreshSession } from "../auth/client";
 
 export type SttResult = { alternatives: string[]; engine: "server" | "device" };
 
@@ -21,11 +22,12 @@ export async function serverSttEnabled(): Promise<boolean> {
 }
 
 export async function transcribeOnServer(wav: Blob, lang: string): Promise<SttResult> {
-  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 20_000);
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12_000);
   try {
-    const r = await fetch(`${API_URL}/api/voice/transcribe?lang=${encodeURIComponent(lang.slice(0, 2))}`, {
-      method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav, signal: ctrl.signal
-    });
+    const url = `${API_URL}/api/voice/transcribe?lang=${encodeURIComponent(lang.slice(0, 2))}`;
+    const post = () => fetch(url, { method: "POST", credentials: "include", headers: { "Content-Type": "audio/wav", ...authHeader() }, body: wav, signal: ctrl.signal });
+    let r = await post();
+    if (r.status === 401 && (await refreshSession())) r = await post();   // токен истёк — обновить и повторить один раз
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const j = await r.json();
     const alts = [j.text, ...(Array.isArray(j.alternatives) ? j.alternatives : [])].filter((x: unknown): x is string => typeof x === "string" && !!x.trim());
