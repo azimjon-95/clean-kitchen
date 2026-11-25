@@ -605,3 +605,4 @@ svg { display: block; flex: none; }
 .cat-ico { padding: 3px; }
 .cat-ico svg { display: block; filter: drop-shadow(0 2px 3px rgba(60, 40, 20, 0.12)); }
 .searchrow, .searchbar { margin-top: 4px; }
+.cat-ico img { width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 3px 4px rgba(60, 40, 20, 0.18)); -webkit-user-drag: none; }
