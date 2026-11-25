@@ -600,3 +600,8 @@ svg { display: block; flex: none; }
 .mg-perm { border-top: 1px solid var(--line); padding: 8px 0; display: flex; flex-direction: column; gap: 6px; }
 .badge { flex: none; align-self: flex-start; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #eef0f3; color: var(--ink-2); }
 .badge.green { background: #e3f6e8; color: #1c7a3a; } .badge.orange { background: var(--orange-soft); color: var(--orange-d); } .badge.red { background: #fdecea; color: #b3261e; }
+
+/* Иллюстрации категорий */
+.cat-ico { padding: 3px; }
+.cat-ico svg { display: block; filter: drop-shadow(0 2px 3px rgba(60, 40, 20, 0.12)); }
+.searchrow, .searchbar { margin-top: 4px; }

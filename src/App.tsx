@@ -23,6 +23,7 @@ import { MOCK_RECIPES } from "./data/mockRecipes";
 import { can, hasFeature, canManage, type Me } from "./auth/client";
 import { loadTenantRecipes, loadTenantCached, pushImport } from "./auth/recipes";
 import { Manage } from "./platform/Manage";
+import { CAT_ART } from "./components/CatArt";
 import type { DataSource, Ingredient, Recipe } from "./types";
 
 type Tab = "home" | "search" | "saved" | "categories" | "menu";
@@ -552,11 +553,6 @@ export default function App({ me = null, onLogout, onReloadMe }: { me?: Me | nul
           ]} />
         )}
 
-        <section className="greet">
-          <h1>Добро пожаловать, Повар!</h1>
-          <p>Найдите нужный рецепт за секунды</p>
-        </section>
-
         {searchBar(true)}
 
         {q ? (
@@ -569,7 +565,7 @@ export default function App({ me = null, onLogout, onReloadMe }: { me?: Me | nul
             <div className="cats">
               {GROUPS.map((g, i) => (
                 <button key={g.key} className={i === 0 ? "cat sel" : "cat"} onClick={() => goSearch({ group: g.key })}>
-                  <span className={`cat-ico ${g.tone}`}>{g.tile}</span>
+                  <span className={`cat-ico ${g.tone}`}>{CAT_ART[g.key] ? (() => { const A = CAT_ART[g.key]; return <A />; })() : g.tile}</span>
                   <span className="cat-label">{g.label}</span>
                   <span className="cat-count">{countOf(g)}</span>
                 </button>
@@ -657,7 +653,7 @@ export default function App({ me = null, onLogout, onReloadMe }: { me?: Me | nul
       <div className="group-grid">
         {GROUPS.map((g) => (
           <button key={g.key} className="group-card" onClick={() => goSearch({ group: g.key })}>
-            <span className={`cat-ico ${g.tone}`}>{g.tile}</span>
+            <span className={`cat-ico ${g.tone}`}>{CAT_ART[g.key] ? (() => { const A = CAT_ART[g.key]; return <A />; })() : g.tile}</span>
             <b>{g.label}</b>
             <small>{countOf(g)} карт</small>
           </button>
